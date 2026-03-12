@@ -1,0 +1,34 @@
+URGENT TASK: Enhance the existing CSH FastAPI web dashboard (running on port 5000) with these TWO new features. DO NOT rewrite existing code - only ADD new components. The dashboard already has service cards for klar/sverkan/upsum - keep them but make services DYNAMIC.
+
+## FEATURE 1: Dynamic Public IP Display Bar (Top of Dashboard)
+- Create a fixed top bar (HTML/CSS: position:fixed, z-index:999, full width, height:40px, bg:#333, white text).
+- Display "Public IP: XX.XX.XX.XX" centered, with refresh icon.
+- Backend: New endpoint /api/public-ip (GET) that fetches public IP via requests.get('http://jsonip.com').json()['ip'] [web:61].
+- Frontend: Use WebSocket (/ws/ip) to connect on load. Server broadcasts IP changes every 30s or on change (use background task: loop fetch IP, if changed -> manager.broadcast(new_ip)).
+- Use existing ConnectionManager pattern if present, else add one like FastAPI docs [web:69].
+- JS: Update bar text live via WS message. Fallback: poll /api/public-ip every 60s.
+- Handle Replit/dynamic IP: Always detect real public IP.
+
+## FEATURE 2: Dynamic Service Cards from csh/services/*.Ink Files
+- Backend: New endpoint /api/services (GET): Scan os.listdir('csh/services/'), filter files ending in '.Ink' [web:67].
+- Return JSON: [{"name": filename.replace('.Ink',''), "status": "stopped", "log": ""}, ...]. If no .Ink files, return empty [].
+- For each service:
+  - Start: POST /api/services/{name}/start -> Create temp RUNME.bat with content of csh/services/{name}.Ink, run via subprocess.Popen(['cmd.exe', '/c', 'RUNME.bat'], stdout=PIPE, cwd=project root). Capture PID, stdout to log. Store processes in dict {name: proc}.
+  - Status: Check if proc.poll() is None -> "running", else "stopped".
+  - Log: Read proc.stdout if running.
+  - Stop: POST /api/services/{name}/stop -> proc.terminate(); proc.wait(); cleanup bat file.
+- Dashboard: Replace hardcoded cards with JS fetch('/api/services') on load/refresh. Dynamically generate cards:
+  - If services empty: Show "No services found. Add *.Ink shortcuts to csh/services/".
+  - Else: For each, show card with Name (e.g. "klar"), buttons Start/Stop, Status badge, Log textarea (auto-scroll).
+- Adding service: User drops klar.Ink (content: your existing RUNME.bat commands) into csh/services/ -> refresh dashboard -> auto-detects new card.
+
+## Implementation Steps (Follow Exactly):
+1. Add imports: import os, subprocess, requests, asyncio, threading. from fastapi import WebSocket.
+2. Create /api/services, /api/public-ip, /ws/ip endpoints in main.py.
+3. Add global dicts: services_procs = {}, ip_manager = ConnectionManager().
+4. Background IP checker: @app.on_event("startup") -> asyncio.create_task(ip_watcher()).
+5. Frontend: Update index.html - add IP bar HTML/JS, replace service section with dynamic JS.
+6. Test: Create sample klar.Ink in csh/services/ with echo "Klar started", verify start/stop/log works.
+7. Replit: Ensure runs on port 5000, no port conflicts. Use uvicorn main:app.
+
+Keep dashboard responsive, modern CSS. Verify WS works in Replit. Show screenshot when done.
