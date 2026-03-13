@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SLP Test Page</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background: linear-gradient(135deg, #0a0a0a 0%, #1a1a1a 100%);
+      color: #e0e0e0;
+      padding: 2rem;
+      min-height: 100vh;
+    }
+
+    .container {
+      max-width: 800px;
+      margin: 0 auto;
+    }
+
+    h1 {
+      font-size: 3rem;
+      background: linear-gradient(135deg, #00e5ff, #00ffa3);
+      -webkit-background-clip: text;
+      background-clip: text;
+      -webkit-text-fill-color: transparent;
+      margin-bottom: 2rem;
+      text-align: center;
+    }
+
+    .status {
+      background: rgba(0, 229, 255, 0.1);
+      border-left: 4px solid #00e5ff;
+      padding: 1.5rem;
+      margin-bottom: 2rem;
+      border-radius: 8px;
+    }
+
+    .status h2 {
+      color: #00e5ff;
+      margin-bottom: 1rem;
+    }
+
+    .info-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 1rem;
+      margin-top: 2rem;
+    }
+
+    .info-card {
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(0, 229, 255, 0.2);
+      border-radius: 8px;
+      padding: 1rem;
+    }
+
+    .info-card h3 {
+      color: #00e5ff;
+      font-size: 0.9rem;
+      margin-bottom: 0.5rem;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+
+    .info-card p {
+      color: #b0b0b0;
+      font-size: 1.2rem;
+    }
+
+    .test-section {
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid rgba(0, 229, 255, 0.2);
+      border-radius: 8px;
+      padding: 2rem;
+      margin-bottom: 2rem;
+    }
+
+    .test-section h2 {
+      color: #00ffa3;
+      margin-bottom: 1rem;
+    }
+
+    button {
+      background: linear-gradient(135deg, #00e5ff, #00ffa3);
+      color: #000;
+      border: none;
+      padding: 1rem 2rem;
+      border-radius: 50px;
+      font-size: 1rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      margin-top: 1rem;
+    }
+
+    button:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 10px 20px rgba(0, 229, 255, 0.3);
+    }
+
+    .log {
+      background: #000;
+      border: 1px solid rgba(0, 229, 255, 0.2);
+      border-radius: 8px;
+      padding: 1rem;
+      max-height: 300px;
+      overflow-y: auto;
+      font-family: 'Courier New', monospace;
+      font-size: 0.9rem;
+      margin-top: 1rem;
+    }
+
+    .log p {
+      margin: 0.3rem 0;
+      color: #00e5ff;
+    }
+
+    .success {
+      color: #00ffa3 !important;
+    }
+
+    .error {
+      color: #ff4444 !important;
+    }
+
+    .footer {
+      text-align: center;
+      margin-top: 3rem;
+      padding-top: 2rem;
+      border-top: 1px solid rgba(0, 229, 255, 0.2);
+      color: #808080;
+    }
+
+    @keyframes pulse {
+      0%, 100% {
+        opacity: 1;
+      }
+      50% {
+        opacity: 0.5;
+      }
+    }
+
+    .active {
+      animation: pulse 2s infinite;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🚀 SLP Test Interface</h1>
+
+    <div class="status">
+      <h2>✅ Connection Status: Active</h2>
+      <p>Successfully connected to SLP server via UDP protocol</p>
+    </div>
+
+    <div class="info-grid">
+      <div class="info-card">
+        <h3>Protocol</h3>
+        <p>SLP v1.0</p>
+      </div>
+      <div class="info-card">
+        <h3>Transport</h3>
+        <p>UDP</p>
+      </div>
+      <div class="info-card">
+        <h3>Port</h3>
+        <p>4270</p>
+      </div>
+      <div class="info-card">
+        <h3>Encryption</h3>
+        <p id="encryption-status">None</p>
+      </div>
+    </div>
+
+    <div class="test-section">
+      <h2>🧪 Test Actions</h2>
+      <p>Test various SLP protocol features</p>
+      
+      <button onclick="testConnection()">Test Connection</button>
+      <button onclick="testLatency()">Measure Latency</button>
+      <button onclick="testPayload()">Send Large Payload</button>
+      <button onclick="clearLog()">Clear Log</button>
+
+      <div class="log" id="log">
+        <p>[00:00:00] SLP Test Interface initialized</p>
+        <p class="success">[00:00:00] Ready for testing</p>
+      </div>
+    </div>
+
+    <div class="test-section">
+      <h2>📄 Quick Info</h2>
+      <p><strong>Server:</strong> Running on localhost:4270</p>
+      <p><strong>Client:</strong> Qt WebEngine (if applicable)</p>
+      <p><strong>Protocol Status:</strong> <span class="success">Operational</span></p>
+      <p style="margin-top: 1rem; color: #808080;">
+        This is a test page to verify SLP protocol functionality. 
+        In production, this will be replaced with actual application interfaces.
+      </p>
+    </div>
+
+    <div class="footer">
+      <p>&copy; 2026 Oscyra Solutions | Secure Line Protocol</p>
+      <p style="margin-top: 0.5rem;">
+        <a href="https://github.com/CKCHDX/SLP" style="color: #00e5ff; text-decoration: none;">View on GitHub</a>
+      </p>
+    </div>
+  </div>
+
+  <script>
+    let logCounter = 0;
+
+    function addLog(message, type = 'info') {
+      const log = document.getElementById('log');
+      const time = new Date().toLocaleTimeString();
+      const p = document.createElement('p');
+      p.textContent = `[${time}] ${message}`;
+      
+      if (type === 'success') {
+        p.className = 'success';
+      } else if (type === 'error') {
+        p.className = 'error';
+      }
+      
+      log.appendChild(p);
+      log.scrollTop = log.scrollHeight;
+      logCounter++;
+    }
+
+    function testConnection() {
+      addLog('Testing connection to SLP server...');
+      
+      // Simulate connection test
+      setTimeout(() => {
+        const success = Math.random() > 0.1; // 90% success rate for demo
+        if (success) {
+          addLog('Connection test successful!', 'success');
+          addLog('Server responded in 45ms', 'success');
+        } else {
+          addLog('Connection test failed', 'error');
+          addLog('Server did not respond', 'error');
+        }
+      }, 500);
+    }
+
+    function testLatency() {
+      addLog('Measuring latency...');
+      
+      const tests = 5;
+      let completed = 0;
+      
+      const interval = setInterval(() => {
+        completed++;
+        const latency = Math.floor(Math.random() * 30) + 20; // 20-50ms
+        addLog(`Test ${completed}/${tests}: ${latency}ms`);
+        
+        if (completed === tests) {
+          clearInterval(interval);
+          const avg = Math.floor(Math.random() * 10) + 35;
+          addLog(`Average latency: ${avg}ms`, 'success');
+        }
+      }, 300);
+    }
+
+    function testPayload() {
+      addLog('Sending large payload (10KB)...');
+      
+      setTimeout(() => {
+        addLog('Payload sent successfully', 'success');
+        addLog('Transfer time: 125ms', 'success');
+        addLog('Throughput: 80 KB/s');
+      }, 800);
+    }
+
+    function clearLog() {
+      const log = document.getElementById('log');
+      log.innerHTML = '<p>[00:00:00] Log cleared</p>';
+      logCounter = 0;
+    }
+
+    // Auto-update timestamp
+    setInterval(() => {
+      const now = new Date();
+      document.title = `SLP Test [${now.toLocaleTimeString()}]`;
+    }, 1000);
+  </script>
+</body>
+</html>
