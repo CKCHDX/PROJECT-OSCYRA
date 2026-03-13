@@ -181,11 +181,17 @@ RECENCY_DECAY_DAYS = 365  # 1 year
 # ============================================================================
 
 # Server binding
-API_HOST = "0.0.0.0"  # Listen on all interfaces
-API_PORT = 5000
+API_HOST = "127.0.0.1"  # Loopback only — external access via Caddy reverse proxy
+API_PORT = 4271
 
-# CORS (allow browser to connect)
-CORS_ORIGINS = ["*"]  # Allow all origins (or specify klar.oscyra.solutions)
+# CORS (restrictive origins — CSH reverse proxy handles external access)
+CORS_ORIGINS = [
+    "https://klar.oscyra.solutions",
+    "https://csh.oscyra.solutions",
+    "https://oscyra.solutions",
+    "http://localhost:5000",
+    "http://127.0.0.1:5000",
+]
 
 # Request limits (to prevent abuse)
 MAX_QUERY_LENGTH = 500

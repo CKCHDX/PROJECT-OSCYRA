@@ -27,7 +27,7 @@ STUDENTS_DIR = os.path.join(ACCOUNTS_DIR, "students")
 SCHEMA_PATH = os.path.join(ACCOUNTS_DIR, "_schema.json")
 APP_REGISTRY_PATH = os.path.join(PROJECT_ROOT, "server", "apps_registry.json")
 
-APP_PORT = int(os.getenv("APP_PORT", 80))
+APP_PORT = int(os.getenv("APP_PORT", 4272))
 PUBLIC_SERVER_ADDRESS = "sverkan.oscyra.solutions"
 SECRET_KEY = os.getenv("APP_SECRET_KEY", "dev-secret-change-in-production")
 
@@ -38,7 +38,13 @@ app = Flask(
     template_folder=FRONTEND_DIR,
 )
 app.secret_key = SECRET_KEY
-CORS(app)
+CORS(app, origins=[
+    "https://sverkan.oscyra.solutions",
+    "https://csh.oscyra.solutions",
+    "https://oscyra.solutions",
+    "http://localhost:5000",
+    "http://127.0.0.1:5000",
+])
 
 RUNNING_APPS = {}
 
@@ -896,4 +902,4 @@ def apps_status():
 
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=APP_PORT, debug=os.getenv("APP_ENV") == "development")
+    app.run(host="127.0.0.1", port=APP_PORT, debug=os.getenv("APP_ENV") == "development")

@@ -1,26 +1,32 @@
 """
-SLP Central Server Hub - Main Entry Point
+SLP Central Server Hub — Main Entry Point (v2).
 
 Serves the web-based control dashboard on port 5000.
+Integrates SLP gateway for encrypted service communication.
 """
 
-import os
-import json
 import asyncio
+import json
 import logging
+import os
+import struct
 import subprocess
 import sys
-import threading
+import time
 from datetime import datetime
+from pathlib import Path
 from typing import Dict, Any, List, Optional
 
+import httpx
 import psutil
-import requests
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
-from fastapi.staticfiles import StaticFiles
+import yaml
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request, Response
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
+
+from slp.gateway.slp_gateway import SLPGateway, ServiceInfo
+from slp.keygen import ensure_keys, load_private_key, load_public_key_bytes
 
 logging.basicConfig(
     level=logging.INFO,
@@ -28,120 +34,119 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="SLP Central Server Hub", version="1.0.0")
+# ── Configuration ──────────────────────────────────────────────────────
+
+CONFIG_PATH = os.path.join(os.path.dirname(__file__), "config", "services.yaml")
+
+ALLOWED_ORIGINS = [
+    "https://oscyra.solutions",
+    "https://csh.oscyra.solutions",
+    "https://klar.oscyra.solutions",
+    "https://sverkan.oscyra.solutions",
+    "https://upsum.oscyra.solutions",
+    "https://testview.oscyra.solutions",
+    "http://localhost:5000",
+    "http://127.0.0.1:5000",
+]
+
+
+def load_config() -> dict:
+    if os.path.exists(CONFIG_PATH):
+        with open(CONFIG_PATH, "r") as f:
+            return yaml.safe_load(f)
+    return {"gateway": {"host": "127.0.0.1", "port": 14270, "keys_dir": "keys"}, "services": {}}
+
+
+config = load_config()
+gateway_cfg = config.get("gateway", {})
+services_cfg = config.get("services", {})
+
+# ── FastAPI App ────────────────────────────────────────────────────────
+
+app = FastAPI(title="SLP Central Server Hub", version="2.0.0")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["*"],
 )
 
-SERVICES: Dict[str, Dict[str, Any]] = {
-    "klar": {
-        "name": "Klar",
-        "sl_id": "klar-001",
-        "port": 4271,
-        "status": "offline",
-        "auto_restart": True,
-        "domain": "klar.oscyra.solutions",
-        "process": None,
-        "uptime_start": None,
-        "requests": 0,
-        "latency_ms": 0,
-        "error_rate": 0.0,
-    },
-    "sverkan": {
-        "name": "Sverkan",
-        "sl_id": "sverkan-001",
-        "port": 4272,
-        "status": "offline",
-        "auto_restart": True,
-        "domain": "sverkan.oscyra.solutions",
-        "process": None,
-        "uptime_start": None,
-        "requests": 0,
-        "latency_ms": 0,
-        "error_rate": 0.0,
-    },
-    "upsum": {
-        "name": "Upsum",
-        "sl_id": "upsum-001",
-        "port": 4273,
-        "status": "offline",
-        "auto_restart": False,
-        "domain": "upsum.oscyra.solutions",
-        "process": None,
-        "uptime_start": None,
-        "requests": 0,
-        "latency_ms": 0,
-        "error_rate": 0.0,
-    },
-    "testview": {
-        "name": "TestView",
-        "sl_id": "testview-001",
-        "port": 4274,
-        "status": "offline",
-        "auto_restart": False,
-        "domain": "testview.oscyra.solutions",
-        "process": None,
-        "uptime_start": None,
-        "requests": 0,
-        "latency_ms": 0,
-        "error_rate": 0.0,
-        "bridge_port": 9001,
-    },
-}
+# ── Global State ───────────────────────────────────────────────────────
 
-LOG_STORE: Dict[str, List[str]] = {k: [] for k in SERVICES}
+slp_gateway: Optional[SLPGateway] = None
 active_connections: List[WebSocket] = []
 ip_connections: List[WebSocket] = []
-services_procs: Dict[str, Any] = {}
+services_procs: Dict[str, subprocess.Popen] = {}
 service_start_times: Dict[str, float] = {}
 current_public_ip: str = "Loading..."
+LOG_STORE: Dict[str, List[str]] = {}
 
 
-class IPConnectionManager:
-    def __init__(self):
-        self.active_connections: List[WebSocket] = []
+# ── SLP Gateway Callbacks ─────────────────────────────────────────────
 
-    async def connect(self, websocket: WebSocket):
-        await websocket.accept()
-        self.active_connections.append(websocket)
-
-    def disconnect(self, websocket: WebSocket):
-        self.active_connections.remove(websocket)
-
-    async def broadcast(self, message: str):
-        for connection in self.active_connections:
-            try:
-                await connection.send_json({"ip": message})
-            except Exception:
-                pass
+async def _on_register(info: ServiceInfo):
+    logger.info("Service registered via SLP: %s (%s)", info.service_id, info.service_name)
+    await _broadcast_services()
 
 
-ip_manager = IPConnectionManager()
+async def _on_heartbeat(service_id: str, metrics: dict):
+    await _broadcast_services()
 
 
-def get_service_status_summary():
+async def _on_log(service_id: str, msg: dict):
+    ts = datetime.now().strftime("%H:%M:%S")
+    level = msg.get("level", "INFO")
+    text = msg.get("message", "")
+    entry = f"[{ts}] {level}: {text}"
+    if service_id not in LOG_STORE:
+        LOG_STORE[service_id] = []
+    LOG_STORE[service_id].append(entry)
+    if len(LOG_STORE[service_id]) > 500:
+        LOG_STORE[service_id] = LOG_STORE[service_id][-500:]
+
+
+async def _on_status_change(service_id: str, status: str):
+    logger.info("Service %s status changed to %s", service_id, status)
+    await _broadcast_services()
+
+
+# ── Helper Functions ───────────────────────────────────────────────────
+
+def _get_service_summary() -> dict:
     result = {}
-    for key, svc in SERVICES.items():
+    for key, svc_cfg in services_cfg.items():
+        sid = svc_cfg.get("service_id", f"{key}-001")
+        info = slp_gateway.services.get(sid) if slp_gateway else None
+        status = "offline"
         uptime = None
-        if svc["uptime_start"]:
-            delta = datetime.now() - svc["uptime_start"]
-            uptime = str(delta).split(".")[0]
+        metrics = {}
+        session_info = {}
+        if info:
+            status = info.status
+            if info.metrics:
+                metrics = info.metrics
+                up_s = metrics.get("uptime_seconds", 0)
+                hours = up_s // 3600
+                mins = (up_s % 3600) // 60
+                uptime = f"{hours}h {mins}m" if hours > 0 else f"{mins}m"
+            if info.session:
+                session_info = {
+                    "session_id": f"0x{info.session.session_id:08X}",
+                    "messages_sent": getattr(info.session, "_send_counter", 0),
+                    "state": info.session.state.name,
+                }
         result[key] = {
-            "name": svc["name"],
-            "sl_id": svc["sl_id"],
-            "port": svc["port"],
-            "status": svc["status"],
-            "auto_restart": svc["auto_restart"],
-            "domain": svc["domain"],
+            "name": svc_cfg.get("name", key),
+            "service_id": sid,
+            "port": svc_cfg.get("http_port", 0),
+            "status": status,
+            "auto_restart": svc_cfg.get("auto_restart", False),
+            "domain": svc_cfg.get("domain", ""),
             "uptime": uptime,
-            "requests": svc["requests"],
-            "latency_ms": svc["latency_ms"],
-            "error_rate": svc["error_rate"],
+            "metrics": metrics,
+            "session": session_info,
         }
     return result
 
@@ -156,7 +161,8 @@ def add_log(service_key: str, message: str, level: str = "INFO"):
         LOG_STORE[service_key] = LOG_STORE[service_key][-500:]
 
 
-async def broadcast(data: dict):
+async def _broadcast_services():
+    data = {"type": "services", "data": _get_service_summary()}
     disconnected = []
     for ws in active_connections:
         try:
@@ -167,21 +173,106 @@ async def broadcast(data: dict):
         active_connections.remove(ws)
 
 
+# ── IP Watcher ─────────────────────────────────────────────────────────
+
+class IPConnectionManager:
+    def __init__(self):
+        self.active_connections: List[WebSocket] = []
+
+    async def connect(self, websocket: WebSocket):
+        await websocket.accept()
+        self.active_connections.append(websocket)
+
+    def disconnect(self, websocket: WebSocket):
+        if websocket in self.active_connections:
+            self.active_connections.remove(websocket)
+
+    async def broadcast(self, message: str):
+        for conn in self.active_connections:
+            try:
+                await conn.send_json({"ip": message})
+            except Exception:
+                pass
+
+
+ip_manager = IPConnectionManager()
+
+
 async def ip_watcher():
     global current_public_ip
     last_ip = None
-    while True:
-        try:
-            resp = requests.get('http://jsonip.com', timeout=5)
-            new_ip = resp.json().get('ip', 'Unknown')
-            if new_ip != last_ip:
-                current_public_ip = new_ip
-                last_ip = new_ip
-                await ip_manager.broadcast(new_ip)
-        except Exception:
-            pass
-        await asyncio.sleep(30)
+    async with httpx.AsyncClient() as client:
+        while True:
+            try:
+                resp = await client.get("https://jsonip.com", timeout=5)
+                new_ip = resp.json().get("ip", "Unknown")
+                if new_ip != last_ip:
+                    current_public_ip = new_ip
+                    last_ip = new_ip
+                    await ip_manager.broadcast(new_ip)
+            except Exception:
+                pass
+            await asyncio.sleep(30)
 
+
+# ── Reverse Proxy Dispatcher ──────────────────────────────────────────
+
+DOMAIN_TO_SERVICE: Dict[str, int] = {}
+for _key, _svc in services_cfg.items():
+    domain = _svc.get("domain", "")
+    port = _svc.get("http_port", 0)
+    if domain and port:
+        DOMAIN_TO_SERVICE[domain] = port
+
+CSH_DOMAINS = {"csh.oscyra.solutions", "localhost", "127.0.0.1"}
+
+
+async def reverse_proxy(request: Request) -> Optional[Response]:
+    host = request.headers.get("host", "").split(":")[0]
+    port = DOMAIN_TO_SERVICE.get(host)
+    if port is None:
+        return None
+    path = request.url.path
+    query = str(request.url.query)
+    target = f"http://127.0.0.1:{port}{path}"
+    if query:
+        target += f"?{query}"
+    async with httpx.AsyncClient() as client:
+        try:
+            body = await request.body()
+            resp = await client.request(
+                method=request.method,
+                url=target,
+                headers={k: v for k, v in request.headers.items()
+                         if k.lower() not in ("host", "transfer-encoding")},
+                content=body,
+                timeout=30.0,
+            )
+            return Response(
+                content=resp.content,
+                status_code=resp.status_code,
+                headers=dict(resp.headers),
+            )
+        except httpx.ConnectError:
+            return JSONResponse(
+                {"error": f"Service on port {port} is not reachable"},
+                status_code=502,
+            )
+        except Exception as exc:
+            return JSONResponse({"error": str(exc)}, status_code=502)
+
+
+@app.middleware("http")
+async def host_router(request: Request, call_next):
+    host = request.headers.get("host", "").split(":")[0]
+    if host in DOMAIN_TO_SERVICE:
+        result = await reverse_proxy(request)
+        if result:
+            return result
+    return await call_next(request)
+
+
+# ── Dashboard HTML ─────────────────────────────────────────────────────
 
 DASHBOARD_HTML = """<!DOCTYPE html>
 <html lang="en">
@@ -199,271 +290,117 @@ DASHBOARD_HTML = """<!DOCTYPE html>
       margin-top: 40px;
     }
     #ip-bar {
-      position: fixed;
-      top: 0;
-      left: 0;
-      right: 0;
-      height: 40px;
-      background: #333;
-      border-bottom: 1px solid #444;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      color: white;
-      z-index: 999;
-      font-size: 0.9rem;
+      position: fixed; top: 0; left: 0; right: 0; height: 40px;
+      background: #333; border-bottom: 1px solid #444;
+      display: flex; align-items: center; justify-content: center;
+      color: white; z-index: 999; font-size: 0.9rem;
       font-family: 'Courier New', monospace;
     }
-    #ip-bar .refresh-btn {
-      cursor: pointer;
-      margin-left: 1rem;
-      color: #00e5ff;
-      font-weight: bold;
-    }
+    #ip-bar .refresh-btn { cursor: pointer; margin-left: 1rem; color: #00e5ff; font-weight: bold; }
     #ip-bar .refresh-btn:hover { opacity: 0.8; }
     header {
-      background: rgba(0,229,255,0.05);
-      border-bottom: 1px solid rgba(0,229,255,0.2);
-      padding: 1rem 2rem;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
+      background: rgba(0,229,255,0.05); border-bottom: 1px solid rgba(0,229,255,0.2);
+      padding: 1rem 2rem; display: flex; align-items: center; justify-content: space-between;
     }
     header h1 {
       font-size: 1.6rem;
       background: linear-gradient(135deg, #00e5ff, #00ffa3);
-      -webkit-background-clip: text;
-      background-clip: text;
+      -webkit-background-clip: text; background-clip: text;
       -webkit-text-fill-color: transparent;
     }
-    .tabs {
-      display: flex;
-      gap: 1rem;
-    }
+    .tabs { display: flex; gap: 1rem; }
     .tab-btn {
-      background: transparent;
-      border: 1px solid rgba(0,229,255,0.3);
-      color: #00e5ff;
-      padding: 0.5rem 1.5rem;
-      border-radius: 50px;
-      cursor: pointer;
-      font-size: 0.9rem;
-      transition: all 0.2s;
+      background: transparent; border: 1px solid rgba(0,229,255,0.3);
+      color: #00e5ff; padding: 0.5rem 1.5rem; border-radius: 50px;
+      cursor: pointer; font-size: 0.9rem; transition: all 0.2s;
     }
-    .tab-btn.active, .tab-btn:hover {
-      background: rgba(0,229,255,0.15);
-    }
+    .tab-btn.active, .tab-btn:hover { background: rgba(0,229,255,0.15); }
     .tab-content { display: none; padding: 2rem; }
     .tab-content.active { display: block; }
-    .section-title {
-      font-size: 1.2rem;
-      color: #00e5ff;
-      margin-bottom: 1.5rem;
-      font-weight: 600;
-    }
+    .section-title { font-size: 1.2rem; color: #00e5ff; margin-bottom: 1.5rem; font-weight: 600; }
     .services-table {
-      width: 100%;
-      border-collapse: collapse;
-      background: rgba(255,255,255,0.03);
-      border-radius: 8px;
-      overflow: hidden;
+      width: 100%; border-collapse: collapse; background: rgba(255,255,255,0.03);
+      border-radius: 8px; overflow: hidden;
     }
     .services-table th {
-      background: rgba(0,229,255,0.1);
-      color: #00e5ff;
-      padding: 1rem;
-      text-align: left;
-      font-size: 0.85rem;
-      text-transform: uppercase;
-      letter-spacing: 1px;
+      background: rgba(0,229,255,0.1); color: #00e5ff; padding: 1rem;
+      text-align: left; font-size: 0.85rem; text-transform: uppercase; letter-spacing: 1px;
     }
-    .services-table td {
-      padding: 1rem;
-      border-bottom: 1px solid rgba(255,255,255,0.05);
-    }
-    .badge {
-      display: inline-block;
-      padding: 0.3rem 0.8rem;
-      border-radius: 50px;
-      font-size: 0.8rem;
-      font-weight: 600;
-    }
-    .badge.online { background: rgba(0,255,163,0.2); color: #00ffa3; }
+    .services-table td { padding: 1rem; border-bottom: 1px solid rgba(255,255,255,0.05); }
+    .badge { display: inline-block; padding: 0.3rem 0.8rem; border-radius: 50px; font-size: 0.8rem; font-weight: 600; }
+    .badge.healthy { background: rgba(0,255,163,0.2); color: #00ffa3; }
     .badge.offline { background: rgba(255,255,255,0.08); color: #888; }
-    .badge.starting { background: rgba(255,200,0,0.2); color: #ffc800; }
+    .badge.unhealthy { background: rgba(255,200,0,0.2); color: #ffc800; }
     .badge.error { background: rgba(255,68,68,0.2); color: #ff4444; }
     .btn-group { display: flex; gap: 0.5rem; }
     .btn {
-      background: transparent;
-      border: 1px solid rgba(0,229,255,0.4);
-      color: #00e5ff;
-      padding: 0.4rem 1rem;
-      border-radius: 6px;
-      cursor: pointer;
-      font-size: 0.85rem;
-      transition: all 0.2s;
+      background: transparent; border: 1px solid rgba(0,229,255,0.4); color: #00e5ff;
+      padding: 0.4rem 1rem; border-radius: 6px; cursor: pointer; font-size: 0.85rem; transition: all 0.2s;
     }
     .btn:hover { background: rgba(0,229,255,0.1); }
     .btn.danger { border-color: rgba(255,68,68,0.4); color: #ff4444; }
     .btn.danger:hover { background: rgba(255,68,68,0.1); }
-    .btn.success { border-color: rgba(0,255,163,0.4); color: #00ffa3; }
-    .btn.success:hover { background: rgba(0,255,163,0.1); }
     .protocol-card {
-      background: rgba(0,229,255,0.05);
-      border: 1px solid rgba(0,229,255,0.2);
-      border-radius: 8px;
-      padding: 1.5rem;
-      margin-top: 2rem;
+      background: rgba(0,229,255,0.05); border: 1px solid rgba(0,229,255,0.2);
+      border-radius: 8px; padding: 1.5rem; margin-top: 2rem;
     }
     .protocol-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-      gap: 1rem;
-      margin-top: 1rem;
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 1rem; margin-top: 1rem;
     }
     .metric-card {
-      background: rgba(255,255,255,0.03);
-      border: 1px solid rgba(0,229,255,0.15);
-      border-radius: 8px;
-      padding: 1rem;
+      background: rgba(255,255,255,0.03); border: 1px solid rgba(0,229,255,0.15);
+      border-radius: 8px; padding: 1rem;
     }
-    .metric-card .label {
-      font-size: 0.75rem;
-      text-transform: uppercase;
-      letter-spacing: 1px;
-      color: #888;
-      margin-bottom: 0.5rem;
-    }
-    .metric-card .value {
-      font-size: 1.4rem;
-      color: #00e5ff;
-      font-weight: 600;
-    }
+    .metric-card .label { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 1px; color: #888; margin-bottom: 0.5rem; }
+    .metric-card .value { font-size: 1.4rem; color: #00e5ff; font-weight: 600; }
     .log-panel {
-      background: #050505;
-      border: 1px solid rgba(0,229,255,0.15);
-      border-radius: 8px;
-      padding: 1rem;
-      height: 350px;
-      overflow-y: auto;
-      font-family: 'Courier New', monospace;
-      font-size: 0.85rem;
+      background: #050505; border: 1px solid rgba(0,229,255,0.15); border-radius: 8px;
+      padding: 1rem; height: 350px; overflow-y: auto;
+      font-family: 'Courier New', monospace; font-size: 0.85rem;
     }
     .log-panel .log-line { padding: 0.2rem 0; color: #00e5ff; }
     .log-panel .log-line.warn { color: #ffc800; }
     .log-panel .log-line.error { color: #ff4444; }
     .log-panel .log-line.success { color: #00ffa3; }
-    .slc-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-      gap: 1.5rem;
-    }
+    .slc-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 1.5rem; }
     .slc-card {
-      background: rgba(255,255,255,0.03);
-      border: 1px solid rgba(0,229,255,0.15);
-      border-radius: 8px;
-      padding: 1.2rem;
+      background: rgba(255,255,255,0.03); border: 1px solid rgba(0,229,255,0.15);
+      border-radius: 8px; padding: 1.2rem;
     }
     .slc-card h3 { color: #00e5ff; margin-bottom: 1rem; font-size: 1rem; }
     .slc-stat { display: flex; justify-content: space-between; margin: 0.5rem 0; font-size: 0.9rem; }
     .slc-stat .k { color: #888; }
     .slc-stat .v { color: #e0e0e0; font-weight: 500; }
-    .service-selector {
-      display: flex;
-      gap: 0.5rem;
-      margin-bottom: 1rem;
-      flex-wrap: wrap;
-    }
-    .ws-status {
-      display: flex;
-      align-items: center;
-      gap: 0.5rem;
-      font-size: 0.8rem;
-      color: #888;
-    }
-    .ws-dot {
-      width: 8px;
-      height: 8px;
-      border-radius: 50%;
-      background: #ff4444;
-    }
+    .service-selector { display: flex; gap: 0.5rem; margin-bottom: 1rem; flex-wrap: wrap; }
+    .ws-status { display: flex; align-items: center; gap: 0.5rem; font-size: 0.8rem; color: #888; }
+    .ws-dot { width: 8px; height: 8px; border-radius: 50%; background: #ff4444; }
     .ws-dot.connected { background: #00ffa3; animation: pulse 2s infinite; }
     @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
-    #dynamic-services-list {
-      padding: 1rem 0;
-      color: #b0b0b0;
-    }
     .service-row {
-      display: flex;
-      align-items: center;
-      gap: 1rem;
-      padding: 0.8rem;
-      border-bottom: 1px solid rgba(0,229,255,0.1);
-      font-size: 0.95rem;
+      display: flex; align-items: center; gap: 1rem; padding: 0.8rem;
+      border-bottom: 1px solid rgba(0,229,255,0.1); font-size: 0.95rem;
     }
-    .service-name {
-      flex: 1;
-      font-weight: 500;
-      color: #e0e0e0;
-    }
-    .service-status-text {
-      min-width: 80px;
-      text-align: center;
-      font-size: 0.85rem;
-      font-weight: 600;
-    }
-    .service-status-text.running {
-      color: #00ffa3;
-      background: rgba(0,255,163,0.1);
-      padding: 0.3rem 0.8rem;
-      border-radius: 50px;
-    }
-    .service-status-text.stopped {
-      color: #888;
-      background: rgba(255,255,255,0.05);
-      padding: 0.3rem 0.8rem;
-    }
-    
-    .service-status-text.initializing {
-      background: rgba(255,193,7,0.2);
-      color: #ffc107;
-      animation: pulse 1s infinite;
-    }
-    
-    @keyframes pulse {
-      0%, 100% { opacity: 1; }
-      50% { opacity: 0.6; }
-    }
-    
-    .service-actions {
-      display: flex;
-      gap: 0.5rem;
-    }
+    .service-name { flex: 1; font-weight: 500; color: #e0e0e0; }
+    .service-status-text { min-width: 80px; text-align: center; font-size: 0.85rem; font-weight: 600; }
+    .service-status-text.healthy { color: #00ffa3; background: rgba(0,255,163,0.1); padding: 0.3rem 0.8rem; border-radius: 50px; }
+    .service-status-text.offline { color: #888; background: rgba(255,255,255,0.05); padding: 0.3rem 0.8rem; border-radius: 50px; }
+    .service-status-text.unhealthy { color: #ffc800; background: rgba(255,193,7,0.2); padding: 0.3rem 0.8rem; border-radius: 50px; }
+    .service-actions { display: flex; gap: 0.5rem; }
     .service-action-btn {
-      background: transparent;
-      border: 1px solid rgba(0,229,255,0.3);
-      color: #00e5ff;
-      padding: 0.4rem 0.8rem;
-      border-radius: 4px;
-      cursor: pointer;
-      font-size: 0.8rem;
-      transition: all 0.2s;
+      background: transparent; border: 1px solid rgba(0,229,255,0.3); color: #00e5ff;
+      padding: 0.4rem 0.8rem; border-radius: 4px; cursor: pointer; font-size: 0.8rem; transition: all 0.2s;
     }
     .service-action-btn:hover { background: rgba(0,229,255,0.1); }
     .service-action-btn.stop { border-color: rgba(255,68,68,0.3); color: #ff4444; }
     .service-action-btn.stop:hover { background: rgba(255,68,68,0.1); }
-    .no-services-message {
-      color: #666;
-      font-style: italic;
-      padding: 2rem 1rem;
-      text-align: center;
-    }
+    .session-info { font-size: 0.75rem; color: #666; font-family: 'Courier New', monospace; margin-top: 0.2rem; }
   </style>
 </head>
 <body>
   <div id="ip-bar">
     <span>Public IP: <span id="ip-text">Loading...</span></span>
-    <span class="refresh-btn" onclick="refreshIP()">🔄</span>
+    <span class="refresh-btn" onclick="refreshIP()">&#x1f504;</span>
   </div>
   <header>
     <h1>SLP Central Server Hub</h1>
@@ -473,8 +410,8 @@ DASHBOARD_HTML = """<!DOCTYPE html>
         <span id="wsLabel">Connecting...</span>
       </div>
       <div class="tabs">
-        <button class="tab-btn active" onclick="showTab('dcc')">Control Center</button>
-        <button class="tab-btn" onclick="showTab('slc')">Status Logs</button>
+        <button class="tab-btn active" onclick="showTab('dcc', this)">Control Center</button>
+        <button class="tab-btn" onclick="showTab('slc', this)">Status Logs</button>
       </div>
     </div>
   </header>
@@ -482,51 +419,34 @@ DASHBOARD_HTML = """<!DOCTYPE html>
   <!-- DCC -->
   <div id="tab-dcc" class="tab-content active">
     <div class="section-title">Services</div>
-    <div id="dynamic-services-list"></div>
-    <div id="no-services-status" style="display:none;padding:2rem;background:rgba(0,229,255,0.05);border:1px solid rgba(0,229,255,0.15);border-radius:8px;margin:1rem 0;">
-      <p style="color:#888;font-size:0.9rem;margin-bottom:1rem;"><strong>No services configured.</strong> Add *.bat files to <code style="background:#050505;padding:0.3rem 0.6rem;border-radius:3px;">csh/services/</code> to display services.</p>
-      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:1rem;margin-top:1rem;">
-        <div style="background:rgba(0,0,0,0.3);padding:1rem;border-radius:6px;border:1px solid rgba(0,229,255,0.1);">
-          <div style="font-size:0.75rem;color:#666;margin-bottom:0.3rem;">SYSTEM UPTIME</div>
-          <div style="font-size:1.1rem;color:#00e5ff;font-weight:600;">Running</div>
-        </div>
-        <div style="background:rgba(0,0,0,0.3);padding:1rem;border-radius:6px;border:1px solid rgba(0,229,255,0.1);">
-          <div style="font-size:0.75rem;color:#666;margin-bottom:0.3rem;">SLP CORE</div>
-          <div style="font-size:1.1rem;color:#00ffa3;font-weight:600;">Active</div>
-        </div>
-        <div style="background:rgba(0,0,0,0.3);padding:1rem;border-radius:6px;border:1px solid rgba(0,229,255,0.1);">
-          <div style="font-size:0.75rem;color:#666;margin-bottom:0.3rem;">SECURITY STATUS</div>
-          <div style="font-size:1.1rem;color:#00ffa3;font-weight:600;">Secure</div>
-        </div>
-      </div>
-    </div>
+    <div id="services-list"></div>
 
     <div class="protocol-card">
-      <div class="section-title">SL Protocol Status</div>
+      <div class="section-title">SLP Gateway Status</div>
       <div class="protocol-grid">
         <div class="metric-card">
-          <div class="label">SLP Address</div>
-          <div class="value" style="font-size:0.9rem;font-family:monospace;">sl://localhost:4270</div>
+          <div class="label">Gateway Address</div>
+          <div class="value" style="font-size:0.9rem;font-family:monospace;">udp://127.0.0.1:14270</div>
         </div>
         <div class="metric-card">
-          <div class="label">Core Status</div>
-          <div class="value" id="protoCore">Active</div>
+          <div class="label">Gateway Status</div>
+          <div class="value" id="protoCore">Initializing</div>
         </div>
         <div class="metric-card">
           <div class="label">Encryption</div>
-          <div class="value" style="font-size:0.85rem;">DTLS 1.3 + Noise</div>
+          <div class="value" style="font-size:0.85rem;">AES-GCM + ChaCha20 + Noise XX</div>
         </div>
         <div class="metric-card">
-          <div class="label">Security Level</div>
-          <div class="value" style="color:#00ffa3;">Military Grade</div>
-        </div>
-        <div class="metric-card">
-          <div class="label">Active Connections</div>
+          <div class="label">Active Sessions</div>
           <div class="value" id="activeCount">0</div>
         </div>
         <div class="metric-card">
-          <div class="label">Base Port</div>
-          <div class="value">4270</div>
+          <div class="label">Key Exchange</div>
+          <div class="value" style="font-size:0.85rem;">X25519 ECDH (PFS)</div>
+        </div>
+        <div class="metric-card">
+          <div class="label">Replay Protection</div>
+          <div class="value" style="font-size:0.85rem;">2048-bit Window</div>
         </div>
       </div>
     </div>
@@ -535,7 +455,6 @@ DASHBOARD_HTML = """<!DOCTYPE html>
   <!-- SLC -->
   <div id="tab-slc" class="tab-content">
     <div class="slc-grid" id="slcGrid"></div>
-
     <div style="margin-top:2rem;">
       <div class="section-title">Live Log Output</div>
       <div class="service-selector" id="logSelector"></div>
@@ -548,44 +467,120 @@ DASHBOARD_HTML = """<!DOCTYPE html>
   <script>
     let services = {};
     let selectedLogService = null;
-    let ws = null;
 
-    function showTab(name) {
+    function showTab(name, btn) {
       document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
       document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
       document.getElementById('tab-' + name).classList.add('active');
-      event.target.classList.add('active');
+      if (btn) btn.classList.add('active');
     }
 
-    // Old rendering functions removed - using dynamic services instead
+    function renderServices(data) {
+      const list = document.getElementById('services-list');
+      if (!list) return;
+      let html = '';
+      let activeCount = 0;
+      for (const [key, svc] of Object.entries(data)) {
+        const status = svc.status || 'offline';
+        const isOnline = status === 'healthy';
+        if (isOnline) activeCount++;
+        const metrics = svc.metrics || {};
+        const session = svc.session || {};
+        const uptime = svc.uptime || '\u2014';
+        const cpuPct = metrics.cpu_percent !== undefined ? metrics.cpu_percent.toFixed(1) + '%' : '\u2014';
+        const memMb = metrics.memory_mb !== undefined ? metrics.memory_mb.toFixed(1) + 'MB' : '\u2014';
+        const sessionId = session.session_id || '\u2014';
+        const msgCount = session.messages_sent !== undefined ? session.messages_sent : '\u2014';
+        const sessionState = session.state || '\u2014';
 
-    async function fetchLogs(serviceKey) {
-      const res = await fetch('/api/logs/' + serviceKey);
-      const data = await res.json();
-      const panel = document.getElementById('logPanel');
-      panel.innerHTML = '';
-      for (const line of data.logs) {
-        const div = document.createElement('div');
-        div.className = 'log-line' +
-          (line.includes('ERROR') ? ' error' : line.includes('WARN') ? ' warn' : line.includes('SUCCESS') ? ' success' : '');
-        div.textContent = line;
-        panel.appendChild(div);
+        html += `
+          <div class="service-row">
+            <div style="flex:1;">
+              <div class="service-name">${svc.name} <span style="font-size:0.75rem;color:#666;">(${svc.service_id})</span></div>
+              <div style="font-size:0.8rem;color:#666;margin-top:0.3rem;">
+                <span style="margin-right:1rem;">Port: ${svc.port}</span>
+                <span style="margin-right:1rem;">Uptime: ${uptime}</span>
+                <span style="margin-right:1rem;">CPU: ${cpuPct}</span>
+                <span>Mem: ${memMb}</span>
+              </div>
+              <div class="session-info">Session: ${sessionId} | State: ${sessionState} | Msgs: ${msgCount}</div>
+            </div>
+            <span class="service-status-text ${status}">${status.toUpperCase()}</span>
+            <div class="service-actions">
+              ${!isOnline ? `<button class="service-action-btn" onclick="startSvc('${key}')">Start</button>` : ''}
+              ${isOnline ? `<button class="service-action-btn stop" onclick="stopSvc('${key}')">Stop</button>` : ''}
+            </div>
+          </div>
+        `;
       }
-      panel.scrollTop = panel.scrollHeight;
+      list.innerHTML = html;
+      const ac = document.getElementById('activeCount');
+      if (ac) ac.textContent = activeCount;
+      const pc = document.getElementById('protoCore');
+      if (pc) pc.textContent = 'Active';
+      if (pc) pc.style.color = '#00ffa3';
     }
 
-    async function serviceAction(key, action) {
-      await fetch('/api/services/' + key + '/' + action, { method: 'POST' });
+    function renderSLC(data) {
+      const grid = document.getElementById('slcGrid');
+      const selector = document.getElementById('logSelector');
+      if (!grid || !selector) return;
+      let html = '';
+      let selHtml = '';
+      for (const [key, svc] of Object.entries(data)) {
+        const status = svc.status || 'offline';
+        const metrics = svc.metrics || {};
+        const session = svc.session || {};
+        html += `<div class="slc-card">
+          <h3>${svc.name}</h3>
+          <div class="slc-stat"><span class="k">Status</span><span class="v"><span class="badge ${status}">${status}</span></span></div>
+          <div class="slc-stat"><span class="k">Service ID</span><span class="v">${svc.service_id}</span></div>
+          <div class="slc-stat"><span class="k">Port</span><span class="v">${svc.port}</span></div>
+          <div class="slc-stat"><span class="k">Domain</span><span class="v">${svc.domain || '\u2014'}</span></div>
+          <div class="slc-stat"><span class="k">Uptime</span><span class="v">${svc.uptime || '\u2014'}</span></div>
+          <div class="slc-stat"><span class="k">CPU</span><span class="v">${metrics.cpu_percent !== undefined ? metrics.cpu_percent.toFixed(1) + '%' : '\u2014'}</span></div>
+          <div class="slc-stat"><span class="k">Memory</span><span class="v">${metrics.memory_mb !== undefined ? metrics.memory_mb.toFixed(1) + ' MB' : '\u2014'}</span></div>
+          <div class="slc-stat"><span class="k">Session</span><span class="v">${session.session_id || '\u2014'}</span></div>
+          <div class="slc-stat"><span class="k">Messages</span><span class="v">${session.messages_sent !== undefined ? session.messages_sent : '\u2014'}</span></div>
+        </div>`;
+        const active = selectedLogService === key ? 'active' : '';
+        selHtml += `<button class="tab-btn ${active}" onclick="selectLog('${key}')">${svc.name}</button>`;
+      }
+      grid.innerHTML = html;
+      selector.innerHTML = selHtml;
+    }
+
+    function selectLog(key) {
+      selectedLogService = key;
+      fetch('/api/logs/' + key).then(r => r.json()).then(data => {
+        const panel = document.getElementById('logPanel');
+        panel.innerHTML = '';
+        for (const line of (data.logs || [])) {
+          const div = document.createElement('div');
+          div.className = 'log-line' +
+            (line.includes('ERROR') ? ' error' : line.includes('WARN') ? ' warn' : line.includes('SUCCESS') ? ' success' : '');
+          div.textContent = line;
+          panel.appendChild(div);
+        }
+        panel.scrollTop = panel.scrollHeight;
+      });
+    }
+
+    function startSvc(key) {
+      fetch('/api/services/' + key + '/start', { method: 'POST' });
+    }
+    function stopSvc(key) {
+      fetch('/api/services/' + key + '/stop', { method: 'POST' });
     }
 
     function initIPBar() {
       const protocol = location.protocol === 'https:' ? 'wss' : 'ws';
-      const ws = new WebSocket(protocol + '://' + location.host + '/ws/ip');
-      ws.onmessage = (e) => {
+      const ipWs = new WebSocket(protocol + '://' + location.host + '/ws/ip');
+      ipWs.onmessage = (e) => {
         const data = JSON.parse(e.data);
         document.getElementById('ip-text').textContent = data.ip;
       };
-      ws.onerror = () => {
+      ipWs.onerror = () => {
         fetch('/api/public-ip').then(r => r.json()).then(d => {
           document.getElementById('ip-text').textContent = d.ip;
         });
@@ -598,84 +593,7 @@ DASHBOARD_HTML = """<!DOCTYPE html>
       });
     }
 
-    function loadDynamicServices() {
-      fetch('/api/dynamic-services').then(r => r.json()).then(services => {
-        const list = document.querySelector('#dynamic-services-list');
-        const noSvcStatus = document.querySelector('#no-services-status');
-        if (!list) return;
-        
-        if (services.length === 0)   {
-          list.innerHTML = '';
-          if (noSvcStatus) noSvcStatus.style.display = 'block';
-          return;
-        }
-        
-        if (noSvcStatus) noSvcStatus.style.display = 'none';
-        
-        let html = '';
-        for (const svc of services) {
-          const statusClass = svc.status === 'running' ? 'running' : 'stopped';
-          const btnClass = svc.status === 'running' ? 'service-action-btn stop' : 'service-action-btn';
-          const btnText = svc.status === 'running' ? 'Stop' : 'Start';
-          const btnOnClick = svc.status === 'running' ? `stopService('${svc.name}')` : `startService('${svc.name}')`;
-          
-          html += `
-            <div class="service-row">
-              <div style="flex:1;">
-                <div class="service-name">${svc.name}</div>
-                <div style="font-size:0.8rem;color:#666;margin-top:0.3rem;">
-                  <span style="margin-right:1rem;">⏱ ${svc.uptime}</span>
-                  <span style="margin-right:1rem;">💾 ${svc.memory}</span>
-                  <span style="margin-right:1rem;">📊 ${svc.cpu}</span>
-                  ${svc.pid ? `<span style="color:#00ffa3;">PID: ${svc.pid}</span>` : ''}
-                </div>
-              </div>
-              <span class="service-status-text ${statusClass}">${svc.status.toUpperCase()}</span>
-              <div class="service-actions">
-                <button class="${btnClass}" onclick="${btnOnClick}">${btnText}</button>
-              </div>
-            </div>
-          `;
-        }
-        list.innerHTML = html;
-      });
-    }
-
-    function startService(name) {
-      const list = document.querySelector('#dynamic-services-list');
-      if (list) {
-        const rows = list.querySelectorAll('.service-row');
-        rows.forEach(row => {
-          const svcName = row.querySelector('.service-name');
-          if (svcName && svcName.textContent.trim() === name) {
-            const statusEl = row.querySelector('.service-status-text');
-            if (statusEl) {
-              statusEl.textContent = 'INITIALIZING';
-              statusEl.className = 'service-status-text initializing';
-            }
-          }
-        });
-      }
-      
-      fetch('/api/dynamic-services/' + name + '/start', { method: 'POST' }).then(r => r.json()).then(data => {
-        console.log('Service started:', data);
-        setTimeout(loadDynamicServices, 300);
-        setInterval(loadDynamicServices, 2000);
-      }).catch(err => {
-        console.error('Error starting service:', err);
-        loadDynamicServices();
-      });
-    }
-
-    function stopService(name) {
-      fetch('/api/dynamic-services/' + name + '/stop', { method: 'POST' }).then(r => r.json()).then(data => {
-        console.log('Service stopped:', data);
-        setTimeout(loadDynamicServices, 300);
-      });
-    }
-
-    setInterval(loadDynamicServices, 5000);
-
+    let ws = null;
     function connectWS() {
       const protocol = location.protocol === 'https:' ? 'wss' : 'ws';
       ws = new WebSocket(protocol + '://' + location.host + '/ws');
@@ -687,7 +605,8 @@ DASHBOARD_HTML = """<!DOCTYPE html>
         const msg = JSON.parse(e.data);
         if (msg.type === 'services') {
           services = msg.data;
-          if (selectedLogService) fetchLogs(selectedLogService);
+          renderServices(services);
+          renderSLC(services);
         }
       };
       ws.onclose = () => {
@@ -699,11 +618,12 @@ DASHBOARD_HTML = """<!DOCTYPE html>
 
     connectWS();
     initIPBar();
-    setTimeout(() => loadDynamicServices(), 100);
   </script>
 </body>
 </html>"""
 
+
+# ── Routes ─────────────────────────────────────────────────────────────
 
 @app.get("/", response_class=HTMLResponse)
 async def root():
@@ -720,219 +640,180 @@ async def slc():
     return DASHBOARD_HTML
 
 
-@app.get("/testview-001/", response_class=HTMLResponse)
-async def testview_root():
-    with open("testview.html", "r") as f:
-        return f.read()
-
-
-@app.get("/testview-001/{path:path}", response_class=HTMLResponse)
-async def testview_path(path: str):
-    with open("testview.html", "r") as f:
-        content = f.read()
-    add_log("testview", f"HTTPS→SLP bridge: GET /testview-001/{path}", "INFO")
-    return content
-
-
 @app.get("/api/public-ip")
 async def get_public_ip():
-    global current_public_ip
-    try:
-        resp = requests.get('http://jsonip.com', timeout=5)
-        ip = resp.json().get('ip', current_public_ip)
-        return JSONResponse({"ip": ip})
-    except Exception:
-        return JSONResponse({"ip": current_public_ip})
+    return JSONResponse({"ip": current_public_ip})
 
 
-@app.get("/api/dynamic-services")
-async def get_dynamic_services():
-    services_dir = "csh/services"
-    if not os.path.exists(services_dir):
-        return JSONResponse([])
-    
-    services = []
-    try:
-        files = os.listdir(services_dir)
-        for f in sorted(files):
-            if f.endswith('.bat'):
-                name = f.replace('.bat', '')
-                proc = services_procs.get(name)
-                # For Windows, check if any cmd.exe child processes are still running from this service
-                if proc and proc.poll() is not None:
-                    # Original process exited, check if there are child processes still running
-                    try:
-                        parent = psutil.Process(proc.pid)
-                        # Get all children recursively
-                        children = parent.children(recursive=True)
-                        status = "running" if len(children) > 0 else "stopped"
-                    except:
-                        status = "stopped"
-                else:
-                    status = "running" if proc else "stopped"
-
-                
-                uptime = "—"
-                memory = "—"
-                cpu = "—"
-                pid = None
-                
-                if status == "running" and name in service_start_times:
-                    import time
-                    elapsed = time.time() - service_start_times[name]
-                    hours = int(elapsed // 3600)
-                    mins = int((elapsed % 3600) // 60)
-                    uptime = f"{hours}h {mins}m" if hours > 0 else f"{mins}m"
-                    
-                    if proc and proc.pid:
-                        try:
-                            p = psutil.Process(proc.pid)
-                            memory = f"{p.memory_info().rss // (1024*1024)}MB"
-                            cpu = f"{p.cpu_percent(interval=0.1):.1f}%"
-                            pid = proc.pid
-                        except:
-                            pass
-                
-                services.append({
-                    "name": name,
-                    "status": status,
-                    "uptime": uptime,
-                    "memory": memory,
-                    "cpu": cpu,
-                    "pid": pid
-                })
-    except Exception as e:
-        logger.error(f"Error scanning services: {e}")
-    
-    return JSONResponse(services)
+@app.get("/api/services")
+async def get_services():
+    return JSONResponse(_get_service_summary())
 
 
-@app.post("/api/dynamic-services/{name}/start")
-async def start_dynamic_service(name: str):
-    import time
-    services_dir = "csh/services"
-    
-    if name in services_procs and services_procs[name].poll() is None:
-        return JSONResponse({"message": "Already running"})
-    
-    # Try to find the service file with different extensions
-    service_file = None
-    file_extensions = ['.bat', '.py', '.exe', '']  # '' for no extension
-    
-    for ext in file_extensions:
-        potential_file = os.path.join(services_dir, f"{name}{ext}")
-        if os.path.exists(potential_file):
-            service_file = potential_file
-            break
-    
-    if not service_file:
+@app.get("/api/gateway")
+async def get_gateway_status():
+    if not slp_gateway:
+        return JSONResponse({"status": "not started"})
+    active = sum(1 for info in slp_gateway.services.values() if info.status == "healthy")
+    return JSONResponse({
+        "status": "active",
+        "bind": f"{gateway_cfg.get('host', '127.0.0.1')}:{gateway_cfg.get('port', 14270)}",
+        "active_sessions": active,
+        "total_services": len(services_cfg),
+    })
+
+
+@app.get("/api/logs/{service_key}")
+async def get_logs(service_key: str):
+    logs = LOG_STORE.get(service_key, [])
+    if not logs:
+        sid = services_cfg.get(service_key, {}).get("service_id", "")
+        logs = LOG_STORE.get(sid, [])
+    return JSONResponse({"logs": logs})
+
+
+@app.post("/api/services/{service_key}/start")
+async def start_service(service_key: str):
+    svc_cfg = services_cfg.get(service_key)
+    if not svc_cfg:
         return JSONResponse({"error": "Service not found"}, status_code=404)
-    
+
+    sid = svc_cfg.get("service_id", f"{service_key}-001")
+    if service_key in services_procs:
+        proc = services_procs[service_key]
+        if proc.poll() is None:
+            return JSONResponse({"message": "Already running"})
+
+    launch = svc_cfg.get("launch", {})
+    cmd = launch.get("command", "")
+    cwd = launch.get("cwd", ".")
+    if not cmd:
+        return JSONResponse({"error": "No launch command configured"}, status_code=400)
+
+    csh_dir = os.path.dirname(os.path.abspath(__file__))
+    abs_cwd = os.path.normpath(os.path.join(csh_dir, cwd))
+
+    # ── DEBUG: log all resolved paths ──────────────────────────────────
+    logger.info("[DEBUG][%s] csh_dir      = %s", service_key, csh_dir)
+    logger.info("[DEBUG][%s] cwd (yaml)   = %s", service_key, cwd)
+    logger.info("[DEBUG][%s] abs_cwd      = %s", service_key, abs_cwd)
+    logger.info("[DEBUG][%s] cwd exists   = %s", service_key, os.path.isdir(abs_cwd))
+    logger.info("[DEBUG][%s] command      = %s", service_key, cmd)
+    if os.path.isdir(abs_cwd):
+        logger.info("[DEBUG][%s] cwd contents = %s", service_key, os.listdir(abs_cwd))
+    add_log(service_key, f"[DEBUG] abs_cwd={abs_cwd} exists={os.path.isdir(abs_cwd)} cmd={cmd}", "INFO")
+    # ───────────────────────────────────────────────────────────────────
+
+    keys_dir = os.path.join(csh_dir, gateway_cfg.get("keys_dir", "keys"))
+    priv_key_path = os.path.join(keys_dir, f"{service_key}_private.key")
+    csh_pub_path = os.path.join(keys_dir, "csh_public.key")
+    gw_host = gateway_cfg.get("host", "127.0.0.1")
+    gw_port = gateway_cfg.get("port", 14270)
+
+    wrapper_cmd = [
+        sys.executable, "-m", "slp.agent.service_wrapper",
+        "--service-id", sid,
+        "--service-name", svc_cfg.get("name", service_key),
+        "--version", svc_cfg.get("version", "1.0.0"),
+        "--http-port", str(svc_cfg.get("http_port", 0)),
+        "--domain", svc_cfg.get("domain", ""),
+        "--csh-addr", f"{gw_host}:{gw_port}",
+        "--private-key", priv_key_path,
+        "--csh-public-key", csh_pub_path,
+        "--launch-cmd", cmd,
+        "--launch-cwd", abs_cwd,
+    ]
+    logger.info("[DEBUG][%s] wrapper_cmd  = %s", service_key, wrapper_cmd)
+
     try:
-        # Determine how to execute based on file extension/type
-        file_ext = os.path.splitext(service_file)[1].lower()
-        cmd = None
-        
-        # Try to read file to check content if needed
-        try:
-            with open(service_file, 'r') as f:
-                content = f.read()
-        except:
-            # Binary file, likely .exe
-            content = ""
-        
-        # Detect file type and choose executor
-        if file_ext == '.py':
-            # Python file
-            cmd = ['python3', service_file]
-        elif file_ext == '.bat':
-            # Batch file - Windows uses cmd.exe, Unix uses bash
-            abs_service_file = os.path.abspath(service_file)
-            if sys.platform == 'win32':
-                cmd = ['cmd.exe', '/c', abs_service_file]
-            else:
-                cmd = ['bash', abs_service_file]
-
-        elif file_ext == '.exe':
-            # Executable file
-            cmd = [service_file]
-        elif not file_ext:
-            # No extension - check shebang or default to bash
-            if content.startswith('#!'):
-                cmd = ['bash', service_file]
-            elif content.lower().startswith('python'):
-                cmd = ['python3', service_file]
-            else:
-                cmd = ['bash', service_file]
-        else:
-            # Unknown extension - try bash
-            cmd = ['bash', service_file]
-        
-        if not cmd:
-            return JSONResponse({"error": f"Unknown file type: {file_ext}"}, status_code=400)
-
-
-        # Start the service process
+        # Capture stderr to a pipe so we can log it after a short delay.
         proc = subprocess.Popen(
-            cmd,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            cwd=os.getcwd(),
-            start_new_session=True
+            wrapper_cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            cwd=csh_dir,
+            start_new_session=True,
         )
-        services_procs[name] = proc
-        service_start_times[name] = time.time()
+        services_procs[service_key] = proc
+        service_start_times[service_key] = time.time()
+        add_log(service_key, f"Starting {svc_cfg.get('name', service_key)} via SLP wrapper (PID {proc.pid})", "SUCCESS")
+        logger.info("[DEBUG][%s] Popen succeeded, PID=%d", service_key, proc.pid)
+
+        # Give the process 2 seconds to fail, then capture any early stderr.
+        async def _collect_stderr():
+            await asyncio.sleep(2)
+            if proc.poll() is not None:
+                _, err = proc.communicate()
+                err_text = err.decode(errors="replace").strip()
+                logger.error("[DEBUG][%s] process exited early (rc=%d): %s", service_key, proc.returncode, err_text)
+                add_log(service_key, f"[ERROR] exited rc={proc.returncode}: {err_text[:300]}", "ERROR")
+            else:
+                logger.info("[DEBUG][%s] process still running after 2s — looks good", service_key)
+
+        asyncio.create_task(_collect_stderr())
+
+        return JSONResponse({"message": f"{service_key} started", "pid": proc.pid})
+    except Exception as exc:
+        logger.error("[DEBUG][%s] Popen failed: %s", service_key, exc)
+        add_log(service_key, f"[ERROR] Popen failed: {exc}", "ERROR")
+        return JSONResponse({"error": str(exc)}, status_code=500)
 
 
-        # For batch files, find the actual child process since cmd.exe chains create new processes
-        if file_ext == '.bat':
-            import time as time_module
-            time_module.sleep(0.5)  # Give child process time to spawn
-            try:
-                parent = psutil.Process(proc.pid)
-                children = parent.children()
-                if children:
-                    # Store the first child process (the actual service)
-                    service_child_pids = {name: children[0].pid}
-            except:
-                pass
+@app.post("/api/services/{service_key}/stop")
+async def stop_service(service_key: str):
+    svc_cfg = services_cfg.get(service_key)
+    if not svc_cfg:
+        return JSONResponse({"error": "Service not found"}, status_code=404)
 
+    sid = svc_cfg.get("service_id", f"{service_key}-001")
 
-        add_log("services", f"Started service: {name} (File: {os.path.basename(service_file)}, PID: {proc.pid})", "SUCCESS")
-        return JSONResponse({"message": f"{name} started", "pid": proc.pid})
-    except Exception as e:
-        logger.error(f"Error starting service: {e}")
-        return JSONResponse({"error": str(e)}, status_code=500)
-
-
-@app.post("/api/dynamic-services/{name}/stop")
-async def stop_dynamic_service(name: str):
-    if name not in services_procs:
-        return JSONResponse({"message": "Service not running"})
-    
-    proc = services_procs[name]
-    if proc.poll() is not None:
-        return JSONResponse({"message": "Service already stopped"})
-    
-    try:
-        proc.terminate()
-        proc.wait(timeout=5)
-        add_log("services", f"Stopped service: {name}", "WARN")
-    except subprocess.TimeoutExpired:
-        proc.kill()
-    except Exception as e:
-        logger.error(f"Error stopping service: {e}")
-    
-    if name in service_start_times:
-        del service_start_times[name]
-    
-    if os.path.exists("RUNME.bat"):
+    if slp_gateway:
         try:
-            os.remove("RUNME.bat")
-        except:
+            await slp_gateway.send_command(sid, "GRACEFUL_STOP")
+        except Exception:
             pass
-    
-    return JSONResponse({"message": f"{name} stopped"})
+
+    proc = services_procs.get(service_key)
+    if proc and proc.poll() is None:
+        try:
+            proc.terminate()
+            proc.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+        except Exception:
+            pass
+
+    if service_key in service_start_times:
+        del service_start_times[service_key]
+
+    add_log(service_key, f"Stopped {svc_cfg.get('name', service_key)}", "WARN")
+    return JSONResponse({"message": f"{service_key} stopped"})
+
+
+# ── WebSocket Endpoints ────────────────────────────────────────────────
+
+@app.websocket("/ws")
+async def websocket_endpoint(websocket: WebSocket):
+    await websocket.accept()
+    active_connections.append(websocket)
+    try:
+        await websocket.send_json({
+            "type": "services",
+            "data": _get_service_summary(),
+        })
+        while True:
+            await asyncio.sleep(5)
+            await websocket.send_json({
+                "type": "services",
+                "data": _get_service_summary(),
+            })
+    except WebSocketDisconnect:
+        pass
+    except Exception:
+        pass
+    finally:
+        if websocket in active_connections:
+            active_connections.remove(websocket)
 
 
 @app.websocket("/ws/ip")
@@ -947,94 +828,62 @@ async def websocket_ip_endpoint(websocket: WebSocket):
     except Exception:
         pass
     finally:
-        if websocket in ip_manager.active_connections:
-            ip_manager.disconnect(websocket)
+        ip_manager.disconnect(websocket)
 
 
-@app.get("/api/services")
-async def get_services():
-    return JSONResponse(get_service_status_summary())
-
-
-@app.post("/api/services/{service_key}/{action}")
-async def service_action(service_key: str, action: str):
-    if service_key not in SERVICES:
-        return JSONResponse({"error": "Service not found"}, status_code=404)
-
-    svc = SERVICES[service_key]
-
-    if action == "start":
-        if svc["status"] == "online":
-            return JSONResponse({"message": "Already running"})
-        svc["status"] = "online"
-        svc["uptime_start"] = datetime.now()
-        add_log(service_key, f"{svc['name']} service started", "SUCCESS")
-        await broadcast({"type": "services", "data": get_service_status_summary()})
-        return JSONResponse({"message": f"{svc['name']} started"})
-
-    elif action == "stop":
-        if svc["status"] == "offline":
-            return JSONResponse({"message": "Already stopped"})
-        svc["status"] = "offline"
-        svc["uptime_start"] = None
-        add_log(service_key, f"{svc['name']} service stopped", "WARN")
-        await broadcast({"type": "services", "data": get_service_status_summary()})
-        return JSONResponse({"message": f"{svc['name']} stopped"})
-
-    elif action == "restart":
-        svc["status"] = "starting"
-        add_log(service_key, f"{svc['name']} restarting...", "INFO")
-        await broadcast({"type": "services", "data": get_service_status_summary()})
-        await asyncio.sleep(1)
-        svc["status"] = "online"
-        svc["uptime_start"] = datetime.now()
-        add_log(service_key, f"{svc['name']} restarted successfully", "SUCCESS")
-        await broadcast({"type": "services", "data": get_service_status_summary()})
-        return JSONResponse({"message": f"{svc['name']} restarted"})
-
-    return JSONResponse({"error": "Unknown action"}, status_code=400)
-
-
-@app.get("/api/logs/{service_key}")
-async def get_logs(service_key: str):
-    if service_key not in SERVICES:
-        return JSONResponse({"error": "Service not found"}, status_code=404)
-    return JSONResponse({"logs": LOG_STORE.get(service_key, [])})
-
-
-@app.websocket("/ws")
-async def websocket_endpoint(websocket: WebSocket):
-    await websocket.accept()
-    active_connections.append(websocket)
-    try:
-        await websocket.send_json({
-            "type": "services",
-            "data": get_service_status_summary()
-        })
-        while True:
-            await asyncio.sleep(5)
-            await websocket.send_json({
-                "type": "services",
-                "data": get_service_status_summary()
-            })
-    except WebSocketDisconnect:
-        pass
-    except Exception:
-        pass
-    finally:
-        if websocket in active_connections:
-            active_connections.remove(websocket)
-
+# ── Startup / Shutdown ─────────────────────────────────────────────────
 
 @app.on_event("startup")
 async def startup_event():
+    global slp_gateway
+
+    csh_dir = os.path.dirname(os.path.abspath(__file__))
+    keys_dir = os.path.join(csh_dir, gateway_cfg.get("keys_dir", "keys"))
+
+    key_names = ["csh"] + list(services_cfg.keys())
+    generated = ensure_keys(keys_dir, key_names)
+    if generated:
+        logger.info("Generated keys for: %s", ", ".join(generated))
+
+    csh_priv = load_private_key(os.path.join(keys_dir, "csh_private.key"))
+    allowed_keys: Dict[str, bytes] = {}
+    for key, svc_cfg_item in services_cfg.items():
+        sid = svc_cfg_item.get("service_id", f"{key}-001")
+        pub_path = os.path.join(keys_dir, f"{key}_public.key")
+        if os.path.exists(pub_path):
+            allowed_keys[sid] = load_public_key_bytes(pub_path)
+
+    slp_gateway = SLPGateway(
+        bind_addr=gateway_cfg.get("host", "127.0.0.1"),
+        bind_port=gateway_cfg.get("port", 14270),
+        private_key=csh_priv,
+        allowed_keys=allowed_keys,
+    )
+    slp_gateway.on_register = _on_register
+    slp_gateway.on_heartbeat = _on_heartbeat
+    slp_gateway.on_log = _on_log
+    slp_gateway.on_status_change = _on_status_change
+    await slp_gateway.start()
+
     asyncio.create_task(ip_watcher())
+
+    logger.info("CSH started — dashboard on 127.0.0.1:5000, SLP gateway on %s:%d",
+                gateway_cfg.get("host", "127.0.0.1"), gateway_cfg.get("port", 14270))
+
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    if slp_gateway:
+        slp_gateway.stop()
+    for key, proc in services_procs.items():
+        if proc.poll() is None:
+            proc.terminate()
 
 
 if __name__ == "__main__":
     uvicorn.run(
         "main:app",
-        host="0.0.0.0",
+        host="127.0.0.1",
         port=5000,
         reload=False,
         log_level="info",

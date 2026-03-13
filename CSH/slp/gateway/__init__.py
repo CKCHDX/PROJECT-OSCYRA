@@ -1,16 +1,5 @@
-"""
-SLP Gateway Hub Module
+"""SLP Gateway Hub."""
 
-Browser support via HTTPS:
-- HTTPS to SLP protocol conversion
-- Session management
-- HTTP/2 support
-- TLS termination
-"""
+from .slp_gateway import SLPGateway, ServiceInfo
 
-__all__ = [
-    "gateway_server",
-    "https_handler",
-    "sl_adapter",
-    "session_manager",
-]
+__all__ = ['SLPGateway', 'ServiceInfo']
