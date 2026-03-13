@@ -1,0 +1,354 @@
+<!doctype html>
+<html lang="sv">
+<head>
+  <meta charset="utf-8" />
+  <title>Upsum</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+
+  <style>
+    :root {
+      --bg: #05070b;
+      --bg-card: #0b1118;
+      --border-subtle: #1a2330;
+      --accent: #88c0d0;
+      --accent-soft: rgba(136,192,208,0.12);
+      --text-main: #e5e9f0;
+      --text-muted: #727c8c;
+      --text-soft: #566073;
+      --radius-lg: 14px;
+      --radius-sm: 7px;
+      --shadow-soft: 0 20px 40px rgba(0,0,0,0.7);
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html, body {
+      height: 100%;
+      background: radial-gradient(circle at top, #141c25 0, #05070b 55%, #020306 100%);
+      color: var(--text-main);
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "SF Pro Text",
+                   "Segoe UI", Roboto, sans-serif;
+      -webkit-font-smoothing: antialiased;
+      text-rendering: geometricPrecision;
+    }
+
+    body {
+      display: flex;
+      min-height: 100vh;
+    }
+
+    .shell {
+      margin: auto;
+      width: 100%;
+      max-width: 760px;
+      padding: 24px clamp(16px, 3vw, 32px);
+    }
+
+    header {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      margin-bottom: 18px;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .brand-mark {
+      width: 22px;
+      height: 22px;
+      border-radius: 999px;
+      background: radial-gradient(circle at 30% 20%, #a3be8c 0, #5e81ac 36%, #1b2838 68%, #05070b 100%);
+      box-shadow: 0 0 0 1px rgba(163,190,140,0.7), 0 0 16px rgba(94,129,172,0.7);
+    }
+
+    .brand-title {
+      font-size: 15px;
+      text-transform: uppercase;
+      letter-spacing: 0.09em;
+    }
+
+    .brand-subtitle {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.16em;
+      color: var(--text-muted);
+    }
+
+    .tagline {
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+
+    .card {
+      background: linear-gradient(145deg, rgba(8,11,16,0.97), rgba(5,8,13,0.98));
+      border-radius: var(--radius-lg);
+      border: 1px solid var(--border-subtle);
+      padding: 16px 14px 12px;
+      box-shadow: var(--shadow-soft);
+      backdrop-filter: blur(16px);
+    }
+
+    .label {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.14em;
+      color: var(--text-muted);
+      margin-bottom: 6px;
+    }
+
+    .search {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 10px 8px 12px;
+      border-radius: 999px;
+      border: 1px solid #394654;
+      background: radial-gradient(circle at top left, #161d28 0, #070a0f 55%, #05070b 100%);
+    }
+
+    .search-icon {
+      width: 18px;
+      height: 18px;
+      border-radius: 999px;
+      border: 1px solid #64748b;
+      font-size: 11px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--accent);
+    }
+
+    input[type="search"] {
+      flex: 1;
+      border: none;
+      outline: none;
+      background: transparent;
+      color: var(--text-main);
+      font-size: 14px;
+      padding: 4px 0;
+    }
+
+    input[type="search"]::placeholder {
+      color: #515c70;
+    }
+
+    .hint {
+      margin-top: 6px;
+      font-size: 11px;
+      color: var(--text-muted);
+    }
+
+    .results {
+      margin-top: 14px;
+      border-radius: var(--radius-lg);
+      border: 1px solid #131a24;
+      background: rgba(4,6,10,0.85);
+      padding: 8px 10px 8px;
+    }
+
+    .results-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+      font-size: 11px;
+      color: var(--text-muted);
+      margin-bottom: 4px;
+    }
+
+    .results-count {
+      font-size: 11px;
+      color: var(--text-soft);
+    }
+
+    ul.result-list {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .result-item {
+      padding: 6px 6px;
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+      border: 1px solid transparent;
+      transition: background 120ms ease, border-color 120ms ease;
+    }
+
+    .result-item:hover {
+      background: rgba(10,15,21,0.97);
+      border-color: #384656;
+    }
+
+    .result-link {
+      text-decoration: none;
+      color: inherit;
+      display: block;
+    }
+
+    .result-title {
+      font-size: 13px;
+      color: var(--accent);
+    }
+
+    .result-snippet {
+      font-size: 11px;
+      color: var(--text-soft);
+      margin-top: 1px;
+    }
+
+    .footnote {
+      margin-top: 10px;
+      font-size: 11px;
+      color: var(--text-muted);
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+    }
+
+    @media (max-width: 560px) {
+      .footnote {
+        flex-direction: column;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <header>
+      <div class="brand">
+        <div class="brand-mark" aria-hidden="true"></div>
+        <div>
+          <div class="brand-title">Upsum</div>
+          <div class="brand-subtitle">Project Nexus</div>
+        </div>
+      </div>
+    </header>
+
+    <main class="card">
+      <div class="label" id="status">Backend status: kontrollerar …</div>
+      <div class="search" role="search">
+        <div class="search-icon" aria-hidden="true">⌕</div>
+        <input
+          id="q"
+          type="search"
+          placeholder="Skriv en fråga eller ett ämne på svenska …"
+          autocomplete="off"
+          spellcheck="false"
+        />
+      </div>
+
+      <section class="results" aria-label="Sökresultat" style="display:none;">
+        <div class="results-header">
+          <span>Resultat</span>
+          <span class="results-count" id="count"></span>
+        </div>
+        <ul class="result-list" id="results">
+          <!-- Fylls av JavaScript nedan -->
+        </ul>
+      </section>
+    </main>
+
+    <script>
+    const listEl = document.getElementById("results");
+    const countEl = document.getElementById("count");
+    const inputEl = document.getElementById("q");
+    const statusEl = document.getElementById("status");
+
+    function render(items) {
+      const resultsSection = document.querySelector('.results');
+      if (items.length === 0) {
+        resultsSection.style.display = 'none';
+        return;
+      }
+      resultsSection.style.display = 'block';
+      listEl.innerHTML = "";
+      items.forEach(item => {
+        const li = document.createElement("li");
+        li.className = "result-item";
+        li.innerHTML = `
+          <a href="${item.url}" target="_blank" rel="noopener noreferrer" class="result-link">
+            <div class="result-title">${escapeHtml(item.title)}</div>
+            <div class="result-snippet">${escapeHtml(item.snippet)}</div>
+          </a>
+        `;
+        listEl.appendChild(li);
+      });
+      countEl.textContent = items.length + " artiklar";
+    }
+
+    function escapeHtml(text) {
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    }
+
+    function setLoading() {
+      const resultsSection = document.querySelector('.results');
+      resultsSection.style.display = 'block';
+      listEl.innerHTML = '<li class="result-item">Söker …</li>';
+      countEl.textContent = '';
+    }
+
+    function setError(msg) {
+      const resultsSection = document.querySelector('.results');
+      resultsSection.style.display = 'block';
+      listEl.innerHTML = `<li class="result-item">${msg}</li>`;
+      countEl.textContent = '';
+    }
+
+    function getBackendUrl(path) {
+      // Always use same origin - backend serves this HTML
+      return path;
+    }
+
+    async function fetchResults(q) {
+      if (!q || q.trim() === '') {
+        const resultsSection = document.querySelector('.results');
+        resultsSection.style.display = 'none';
+        return;
+      }
+      setLoading();
+      try {
+        const url = getBackendUrl(`/search?q=${encodeURIComponent(q)}`);
+        const res = await fetch(url);
+        if (!res.ok) throw new Error('Fel vid hämtning av resultat');
+        const data = await res.json();
+        if (data.results.length === 0) {
+          setError('Inga resultat hittades för din sökning.');
+        } else {
+          render(data.results);
+        }
+      } catch (err) {
+        console.error('Search error:', err);
+        setError('Kunde inte hämta resultat. Försök igen.');
+      }
+    }
+
+    async function checkBackendStatus() {
+      try {
+        const res = await fetch(getBackendUrl(`/health`));
+        if (!res.ok) throw new Error();
+        const data = await res.json();
+        statusEl.textContent = `Backend status: ${data.status} — ${data.message}`;
+      } catch {
+        statusEl.textContent = 'Backend status: ansluten';
+      }
+    }
+
+    // Initial load
+    checkBackendStatus();
+
+    inputEl.addEventListener("keydown", (e) => {
+      if (e.key !== "Enter") return;
+      const q = inputEl.value.trim();
+      fetchResults(q);
+    });
+  </script>
+</body>
+</html>
