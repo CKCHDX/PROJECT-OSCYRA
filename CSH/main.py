@@ -136,7 +136,7 @@ def _get_service_summary() -> dict:
             if info.session:
                 session_info = {
                     "session_id": f"0x{info.session.session_id:08X}",
-                    "messages_sent": info.session.send_counter,
+                    "messages_sent": getattr(info.session, "_send_counter", 0),
                     "state": info.session.state.name,
                 }
         result[key] = {
