@@ -1,0 +1,21 @@
+{
+  "id": "student-eb223e3a",
+  "username": "test",
+  "password_hash": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
+  "role": "student",
+  "full_name": "test",
+  "email": "test",
+  "status": "active",
+  "created_at": "2026-02-19T09:45:04.129984+00:00",
+  "last_login": "2026-02-19T09:45:29.656525+00:00",
+  "desktop_type": "student",
+  "available_apps": [
+    "skola",
+    "klar",
+    "word",
+    "excel",
+    "powerpoint",
+    "publisher"
+  ],
+  "meta": {}
+}

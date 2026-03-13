@@ -1,0 +1,570 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+  <meta charset="UTF-8" />
+  <title>Sverkan Adminpanel</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <style>
+    :root {
+      --bg: #0a0f1e;
+      --card: #111827;
+      --border: #1f2937;
+      --text: #f5f7fb;
+      --muted: #a4afc4;
+      --accent: #4ba3ff;
+      --danger: #ef4444;
+      --success: #22c55e;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+      background: linear-gradient(135deg, #0a0f1e 0%, #1a2332 100%);
+      color: var(--text);
+      padding: 24px;
+    }
+    .wrap {
+      max-width: 1100px;
+      margin: 0 auto;
+    }
+    h1 {
+      margin: 0 0 8px;
+      font-size: 1.4rem;
+      font-weight: 600;
+    }
+    p { color: var(--muted); margin: 0 0 20px; }
+    .grid {
+      display: grid;
+      grid-template-columns: 1.1fr 1fr;
+      gap: 18px;
+    }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 16px;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+    }
+    label { display: block; font-size: 0.85rem; color: var(--muted); margin-bottom: 6px; }
+    input, select {
+      width: 100%;
+      padding: 10px 12px;
+      border-radius: 10px;
+      border: 1px solid #233044;
+      background: #0b1220;
+      color: var(--text);
+      margin-bottom: 12px;
+      outline: none;
+    }
+    button {
+      padding: 10px 14px;
+      border-radius: 10px;
+      border: none;
+      cursor: pointer;
+      background: var(--accent);
+      color: #fff;
+      font-weight: 600;
+    }
+    button.secondary {
+      background: transparent;
+      border: 1px solid #2b3b55;
+      color: var(--muted);
+    }
+    button.danger { background: var(--danger); }
+    .row { display: flex; gap: 8px; }
+    .row > * { flex: 1; }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.9rem;
+    }
+    th, td { text-align: left; padding: 10px 8px; border-bottom: 1px solid #1f2937; }
+    th { color: var(--muted); font-weight: 600; }
+    .badge {
+      padding: 2px 8px;
+      border-radius: 999px;
+      font-size: 0.75rem;
+      background: rgba(75, 163, 255, 0.2);
+      color: #9cc6ff;
+    }
+    .status-active { color: var(--success); }
+    .status-disabled { color: var(--danger); }
+    .msg { margin-top: 10px; color: var(--muted); font-size: 0.85rem; }
+    .apps-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+    .app-chip {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 10px;
+      border-radius: 10px;
+      border: 1px solid #1f2a3f;
+      background: #0b1220;
+      color: var(--text);
+      font-size: 0.85rem;
+    }
+    .app-chip input {
+      width: auto;
+      margin: 0;
+    }
+    .app-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.85rem;
+    }
+    .app-table th, .app-table td {
+      text-align: left;
+      padding: 8px 6px;
+      border-bottom: 1px solid #1f2937;
+      vertical-align: top;
+    }
+    .app-table th { color: var(--muted); }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>Adminpanel – Konton</h1>
+    <p>Skapa, uppdatera och hantera användare. Endast admin får ändra konton.</p>
+
+    <div class="grid">
+      <div class="card">
+        <h2 style="margin-top:0; font-size:1.1rem;">Skapa konto</h2>
+        <label>Fullständigt namn</label>
+        <input id="createName" placeholder="Ex: Anna Andersson" />
+
+        <label>Användarnamn</label>
+        <input id="createUsername" placeholder="Ex: anna.andersson" />
+
+        <label>Lösenord</label>
+        <input id="createPassword" type="password" placeholder="Minst 6 tecken" />
+
+        <label>Roll</label>
+        <select id="createRole">
+          <option value="student">Student</option>
+          <option value="admin">Admin</option>
+        </select>
+
+        <label>E-post (valfritt)</label>
+        <input id="createEmail" placeholder="Ex: anna@demo.se" />
+
+        <button onclick="createUser()">Skapa konto</button>
+        <div id="createMsg" class="msg"></div>
+      </div>
+
+      <div class="card">
+        <h2 style="margin-top:0; font-size:1.1rem;">Uppdatera konto</h2>
+        <label>Välj användare</label>
+        <select id="editSelect"></select>
+
+        <label>Fullständigt namn</label>
+        <input id="editName" />
+
+        <label>E-post</label>
+        <input id="editEmail" />
+
+        <div class="row">
+          <div>
+            <label>Roll</label>
+            <select id="editRole">
+              <option value="student">Student</option>
+              <option value="admin">Admin</option>
+            </select>
+          </div>
+          <div>
+            <label>Status</label>
+            <select id="editStatus">
+              <option value="active">Aktiv</option>
+              <option value="disabled">Inaktiv</option>
+            </select>
+          </div>
+        </div>
+
+        <label>Nytt lösenord (valfritt)</label>
+        <input id="editPassword" type="password" placeholder="Lämna tomt för oförändrat" />
+
+        <label>Tillåtna appar</label>
+        <div id="appsGrid" class="apps-grid"></div>
+
+        <div class="row">
+          <button onclick="updateUser()">Uppdatera konto</button>
+          <button class="secondary" onclick="refreshUsers()">Uppdatera lista</button>
+        </div>
+        <div id="editMsg" class="msg"></div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:18px;">
+      <h2 style="margin-top:0; font-size:1.1rem;">Alla konton</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Användarnamn</th>
+            <th>Namn</th>
+            <th>Roll</th>
+            <th>Status</th>
+            <th>Skapad</th>
+            <th>Senast inloggning</th>
+          </tr>
+        </thead>
+        <tbody id="usersTable"></tbody>
+      </table>
+    </div>
+
+    <div class="card" style="margin-top:18px;">
+      <h2 style="margin-top:0; font-size:1.1rem;">App-katalog</h2>
+      <p>Här ser du alla appar. Du kan upptäcka Office-appar automatiskt och lägga till egna program med full sökväg.</p>
+
+      <div class="row" style="margin-bottom:12px;">
+        <button onclick="refreshDetectedApps()">Upptäck Office-appar</button>
+        <button class="secondary" onclick="loadAppsRegistry(true)">Uppdatera lista</button>
+      </div>
+
+      <table class="app-table">
+        <thead>
+          <tr>
+            <th>App</th>
+            <th>Id</th>
+            <th>Sökväg</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="appsTable"></tbody>
+      </table>
+
+      <h3 style="margin:18px 0 8px; font-size:1rem;">Lägg till app manuellt</h3>
+      <div class="row">
+        <div>
+          <label>Namn</label>
+          <input id="appName" placeholder="Ex: OneNote" />
+        </div>
+        <div>
+          <label>App ID (valfritt)</label>
+          <input id="appId" placeholder="Ex: onenote" />
+        </div>
+      </div>
+      <div class="row">
+        <div>
+          <label>Full sökväg</label>
+          <input id="appPath" placeholder="C:\Program Files\...\APP.EXE" />
+        </div>
+        <div>
+          <label>Ikon (emoji)</label>
+          <input id="appIcon" placeholder="📦" />
+        </div>
+      </div>
+      <div class="row">
+        <div>
+          <label>Färg</label>
+          <input id="appColor" placeholder="#4ba3ff" />
+        </div>
+        <div style="display:flex; align-items:flex-end;">
+          <button type="button" onclick="addApp()">Spara app</button>
+        </div>
+      </div>
+      <div id="appMsg" class="msg"></div>
+    </div>
+  </div>
+
+  <script>
+    let users = [];
+    let appsRegistry = [];
+
+    async function refreshUsers() {
+      const res = await fetch('/api/admin/users');
+      if (!res.ok) {
+        document.getElementById('createMsg').textContent = 'Kunde inte hämta användare.';
+        return;
+      }
+      const data = await res.json();
+      users = data.users || [];
+      renderUsers();
+      renderSelect();
+      await loadAppsRegistry();
+    }
+
+    async function loadAppsRegistry(force = false) {
+      if (appsRegistry.length && !force) {
+        renderAppsGrid();
+        renderAppsTable();
+        return;
+      }
+      const res = await fetch('/api/admin/apps');
+      if (!res.ok) {
+        document.getElementById('editMsg').textContent = 'Kunde inte hämta appkatalog.';
+        return;
+      }
+      const data = await res.json();
+      appsRegistry = data.apps || [];
+      renderAppsGrid();
+      renderAppsTable();
+    }
+
+    function renderAppsGrid() {
+      const grid = document.getElementById('appsGrid');
+      if (!grid) return;
+      grid.innerHTML = '';
+
+      appsRegistry.forEach(app => {
+        const label = document.createElement('label');
+        label.className = 'app-chip';
+        label.innerHTML = `
+          <input type="checkbox" data-app-id="${app.app_id}" />
+          <span>${app.app_icon || '📦'} ${app.app_name}</span>
+        `;
+        grid.appendChild(label);
+      });
+
+      const selected = document.getElementById('editSelect').value;
+      if (selected) {
+        applyUserApps(selected);
+      }
+    }
+
+    function renderAppsTable() {
+      const tbody = document.getElementById('appsTable');
+      if (!tbody) return;
+      tbody.innerHTML = '';
+
+      appsRegistry.forEach(app => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td>${app.app_icon || '📦'} ${app.app_name}</td>
+          <td>${app.app_id}</td>
+          <td>${app.app_path || '-'}</td>
+          <td><button class="secondary" onclick="deleteApp('${app.app_id}')">Ta bort</button></td>
+        `;
+        tbody.appendChild(tr);
+      });
+    }
+
+    function renderUsers() {
+      const tbody = document.getElementById('usersTable');
+      tbody.innerHTML = '';
+      users.forEach(u => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td><span class="badge">${u.username}</span></td>
+          <td>${u.full_name || ''}</td>
+          <td>${u.role}</td>
+          <td class="${u.status === 'active' ? 'status-active' : 'status-disabled'}">${u.status}</td>
+          <td>${formatDate(u.created_at)}</td>
+          <td>${formatDate(u.last_login)}</td>
+        `;
+        tbody.appendChild(tr);
+      });
+    }
+
+    function renderSelect() {
+      const select = document.getElementById('editSelect');
+      select.innerHTML = '';
+      users.forEach(u => {
+        const opt = document.createElement('option');
+        opt.value = u.username;
+        opt.textContent = `${u.username} (${u.role})`;
+        select.appendChild(opt);
+      });
+      if (users.length) {
+        loadUser(users[0].username);
+      }
+    }
+
+    function loadUser(username) {
+      const user = users.find(u => u.username === username);
+      if (!user) return;
+      document.getElementById('editName').value = user.full_name || '';
+      document.getElementById('editEmail').value = user.email || '';
+      document.getElementById('editRole').value = user.role || 'student';
+      document.getElementById('editStatus').value = user.status || 'active';
+      document.getElementById('editPassword').value = '';
+      applyUserApps(username);
+    }
+
+    function applyUserApps(username) {
+      const user = users.find(u => u.username === username);
+      if (!user) return;
+      const allowed = new Set(user.available_apps || []);
+      document.querySelectorAll('#appsGrid input[type="checkbox"]').forEach(cb => {
+        cb.checked = allowed.has(cb.dataset.appId);
+      });
+    }
+
+    document.getElementById('editSelect').addEventListener('change', (e) => {
+      loadUser(e.target.value);
+    });
+
+    function getSelectedApps() {
+      return Array.from(document.querySelectorAll('#appsGrid input[type="checkbox"]'))
+        .filter(cb => cb.checked)
+        .map(cb => cb.dataset.appId);
+    }
+
+    async function addApp() {
+      const appMsg = document.getElementById('appMsg');
+      const payload = {
+        app_name: document.getElementById('appName').value.trim(),
+        app_id: document.getElementById('appId').value.trim(),
+        app_path: document.getElementById('appPath').value.trim(),
+        app_icon: document.getElementById('appIcon').value.trim() || '📦',
+        app_color: document.getElementById('appColor').value.trim() || '#4ba3ff'
+      };
+
+      if (!payload.app_name) {
+        appMsg.textContent = 'Fyll i namn på appen.';
+        return;
+      }
+
+      if (!payload.app_path) {
+        appMsg.textContent = 'Fyll i full sökväg till programmet.';
+        return;
+      }
+
+      appMsg.textContent = 'Sparar app...';
+
+      try {
+        const res = await fetch('/api/admin/apps', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+
+        let data = {};
+        try {
+          data = await res.json();
+        } catch (e) {
+          data = {};
+        }
+
+        if (!res.ok) {
+          appMsg.textContent = data.error || `Misslyckades att lägga till app (status ${res.status}).`;
+          return;
+        }
+
+        appMsg.textContent = 'App tillagd.';
+        document.getElementById('appName').value = '';
+        document.getElementById('appId').value = '';
+        document.getElementById('appPath').value = '';
+        document.getElementById('appIcon').value = '';
+        document.getElementById('appColor').value = '';
+        await loadAppsRegistry(true);
+      } catch (error) {
+        appMsg.textContent = 'Nätverksfel. Försök igen.';
+      }
+    }
+
+    async function refreshDetectedApps() {
+      const res = await fetch('/api/admin/apps/refresh', {
+        method: 'POST'
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        document.getElementById('appMsg').textContent = data.error || 'Misslyckades att upptäcka appar.';
+        return;
+      }
+
+      appsRegistry = data.apps || [];
+      renderAppsGrid();
+      renderAppsTable();
+      document.getElementById('appMsg').textContent = 'Appar uppdaterade.';
+    }
+
+    async function deleteApp(appId) {
+      const res = await fetch(`/api/admin/apps/${encodeURIComponent(appId)}`, {
+        method: 'DELETE'
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        document.getElementById('appMsg').textContent = data.error || 'Misslyckades att ta bort app.';
+        return;
+      }
+
+      appsRegistry = data.apps || [];
+      renderAppsGrid();
+      renderAppsTable();
+      document.getElementById('appMsg').textContent = 'App borttagen.';
+    }
+
+    async function createUser() {
+      const payload = {
+        full_name: document.getElementById('createName').value.trim(),
+        username: document.getElementById('createUsername').value.trim(),
+        password: document.getElementById('createPassword').value,
+        role: document.getElementById('createRole').value,
+        email: document.getElementById('createEmail').value.trim() || null
+      };
+
+      const res = await fetch('/api/admin/users', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        document.getElementById('createMsg').textContent = data.error || 'Misslyckades att skapa konto.';
+        return;
+      }
+
+      document.getElementById('createMsg').textContent = 'Konto skapat.';
+      document.getElementById('createName').value = '';
+      document.getElementById('createUsername').value = '';
+      document.getElementById('createPassword').value = '';
+      document.getElementById('createEmail').value = '';
+      await refreshUsers();
+    }
+
+    async function updateUser() {
+      const username = document.getElementById('editSelect').value;
+      const apps = getSelectedApps();
+      const payload = {
+        full_name: document.getElementById('editName').value.trim(),
+        email: document.getElementById('editEmail').value.trim() || null,
+        role: document.getElementById('editRole').value,
+        status: document.getElementById('editStatus').value,
+        password: document.getElementById('editPassword').value
+      };
+
+      const res = await fetch(`/api/admin/users/${encodeURIComponent(username)}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        document.getElementById('editMsg').textContent = data.error || 'Misslyckades att uppdatera konto.';
+        return;
+      }
+
+      const appsRes = await fetch(`/api/admin/users/${encodeURIComponent(username)}/apps`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ apps })
+      });
+
+      const appsData = await appsRes.json();
+      if (!appsRes.ok) {
+        document.getElementById('editMsg').textContent = appsData.error || 'Konto uppdaterat men appar misslyckades.';
+        return;
+      }
+
+      document.getElementById('editMsg').textContent = 'Konto och appar uppdaterade.';
+      await refreshUsers();
+    }
+
+    function formatDate(value) {
+      if (!value) return '-';
+      const date = new Date(value);
+      if (Number.isNaN(date.getTime())) return value;
+      return date.toLocaleString('sv-SE');
+    }
+
+    refreshUsers();
+  </script>
+</body>
+</html>
