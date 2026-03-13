@@ -61,10 +61,10 @@ async def _run(args):
     # Start SLP agent.
     await agent.start()
 
-    # Start the actual service process.
-    launch_cmd = args.launch_cmd.split()
+    # Launch the service using shell=True so cmd.exe and .bat files work from WSL.
+    launch_cmd = args.launch_cmd
     launch_cwd = args.launch_cwd or "."
-    logger.info("Launching service: %s (cwd=%s)", args.launch_cmd, launch_cwd)
+    logger.info("Launching service: %s (cwd=%s)", launch_cmd, launch_cwd)
 
     proc = subprocess.Popen(
         launch_cmd,
@@ -73,6 +73,7 @@ async def _run(args):
         stderr=subprocess.STDOUT,
         text=True,
         bufsize=1,
+        shell=True,
     )
 
     async def on_command(msg):
@@ -99,7 +100,9 @@ async def _run(args):
     while proc.poll() is None:
         await asyncio.sleep(1)
 
-    logger.info("Service process exited with code %d", proc.returncode)
+    rc = proc.returncode
+    logger.info("Service process exited with code %d", rc)
+    await agent.send_log("ERROR", f"Service process exited with code {rc}", source=args.service_id)
     agent.stop()
 
 
