@@ -1,0 +1,20 @@
+{
+  "id": "student-8c856e60",
+  "username": "1",
+  "password_hash": "6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b",
+  "role": "student",
+  "full_name": "1",
+  "email": "1",
+  "status": "active",
+  "created_at": "2026-02-16T16:02:02.599640+00:00",
+  "last_login": "2026-02-19T08:53:09.429051+00:00",
+  "desktop_type": "student",
+  "available_apps": [
+    "skola",
+    "word",
+    "excel",
+    "powerpoint",
+    "publisher"
+  ],
+  "meta": {}
+}

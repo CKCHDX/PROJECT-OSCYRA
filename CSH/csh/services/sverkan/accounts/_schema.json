@@ -1,0 +1,16 @@
+{
+  "id": "user-uuid",
+  "username": "string",
+  "password_hash": "sha256",
+  "role": "admin|student",
+  "full_name": "string",
+  "email": "string|null",
+  "status": "active|disabled",
+  "created_at": "ISO-8601",
+  "last_login": "ISO-8601|null",
+  "desktop_type": "admin|student",
+  "available_apps": [
+    "app_id"
+  ],
+  "meta": {}
+}

@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+  <meta charset="UTF-8" />
+  <title>Sverkan – Logga in</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <style>
+    :root {
+      --bg: #05070b;
+      --accent: #4ba3ff;
+      --text: #f5f7fb;
+      --muted: #a4afc4;
+      --success: #1a7f37;
+      --error: #ef4444;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+      color: var(--text);
+      background: linear-gradient(135deg, #141d2f 0%, #4ba3ff 100%);
+      animation: gradientMove 8s ease-in-out infinite alternate;
+    }
+    @keyframes gradientMove {
+      0% { background-position: 0% 50%; }
+      100% { background-position: 100% 50%; }
+    }
+    .wrap {
+      text-align: center;
+      max-width: 360px;
+      padding: 32px 24px;
+      background: rgba(10, 14, 24, 0.92);
+      border-radius: 18px;
+      box-shadow: 0 8px 32px rgba(75,163,255,0.12);
+    }
+    .logo-orbit {
+      width: 96px;
+      height: 96px;
+      margin: 0 auto 16px;
+      position: relative;
+      perspective: 800px;
+    }
+    .logo-core {
+      position: absolute;
+      inset: 18px;
+      border-radius: 999px;
+      background: radial-gradient(circle at 30% 20%, #ffffff, #4ba3ff 35%, #102132 75%);
+      box-shadow: 0 0 32px rgba(75, 163, 255, 0.9);
+    }
+    .logo-ring {
+      position: absolute;
+      inset: 0;
+      border-radius: 999px;
+      border: 1px solid rgba(116, 178, 255, 0.7);
+      box-shadow:
+        0 0 0 1px rgba(70, 120, 190, 0.5),
+        0 0 42px rgba(75, 163, 255, 0.5);
+      transform-style: preserve-3d;
+      animation: orbit 3.2s linear infinite;
+    }
+    .logo-ring::before,
+    .logo-ring::after {
+      content: "";
+      position: absolute;
+      inset: 10px;
+      border-radius: 999px;
+      border: 1px solid rgba(146, 198, 255, 0.6);
+      transform-style: preserve-3d;
+    }
+    .logo-ring::before { transform: rotateX(60deg); }
+    .logo-ring::after { transform: rotateY(60deg); }
+    @keyframes orbit {
+      from { transform: rotateX(24deg) rotateY(-14deg) rotateZ(0deg); }
+      to   { transform: rotateX(24deg) rotateY(-14deg) rotateZ(360deg); }
+    }
+    .title {
+      font-size: 1.3rem;
+      font-weight: 600;
+      margin-bottom: 6px;
+      letter-spacing: 0.02em;
+    }
+    .sub {
+      font-size: 0.95rem;
+      color: var(--muted);
+      margin-bottom: 22px;
+    }
+    .form-group {
+      margin-bottom: 18px;
+      text-align: left;
+    }
+    .form-label {
+      font-size: 0.92rem;
+      color: var(--muted);
+      margin-bottom: 4px;
+      display: block;
+    }
+    .form-input {
+      width: 100%;
+      padding: 12px 14px;
+      border-radius: 999px;
+      border: 1px solid rgba(104, 140, 192, 0.5);
+      background: rgba(10, 14, 24, 0.96);
+      color: var(--text);
+      font-size: 1rem;
+      outline: none;
+      margin-bottom: 6px;
+      transition: border-color 0.2s;
+    }
+    .form-input:focus {
+      border-color: var(--accent);
+    }
+    .login-btn {
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      border-radius: 999px;
+      width: 100%;
+      padding: 12px 14px;
+      font-size: 1.05rem;
+      font-weight: 600;
+      cursor: pointer;
+      box-shadow: 0 8px 24px rgba(75,163,255,0.18);
+      margin-top: 8px;
+      transition: background 0.2s, box-shadow 0.2s;
+    }
+    .login-btn:hover {
+      background: #1a7f37;
+      box-shadow: 0 12px 32px rgba(26,127,55,0.18);
+    }
+    .message {
+      margin: 12px 0;
+      padding: 10px 14px;
+      border-radius: 8px;
+      font-size: 0.98rem;
+      display: none;
+    }
+    .message.success {
+      background: rgba(26,127,55,0.12);
+      color: var(--success);
+      display: block;
+    }
+    .message.error {
+      background: rgba(239,68,68,0.12);
+      color: var(--error);
+      display: block;
+    }
+    @media (max-width: 480px) {
+      .wrap {
+        max-width: 98vw;
+        padding: 12px 4vw;
+      }
+      .logo-orbit {
+        width: 72px;
+        height: 72px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="logo-orbit">
+      <div class="logo-core"></div>
+      <div class="logo-ring"></div>
+    </div>
+    <div class="title">Välkommen till Sverkan</div>
+    <div class="sub">
+      Logga in med ditt Sverkan ID för att komma åt ditt skrivbord.
+    </div>
+
+    <form id="sverkanIdForm" style="width: 100%;">
+      <div class="form-group">
+        <label for="sverkanId" class="form-label">Sverkan ID</label>
+        <input type="text" id="sverkanId" class="form-input" placeholder="ex: elev.anvandare">
+      </div>
+      <div class="form-group">
+        <label for="sverkanPassword" class="form-label">Lösenord</label>
+        <input type="password" id="sverkanPassword" class="form-input" placeholder="Lösenord">
+      </div>
+      <button type="submit" class="login-btn">Logga in med Sverkan ID</button>
+      <div id="loginMessage" class="message"></div>
+    </form>
+  </div>
+
+  <script>
+    document.addEventListener('DOMContentLoaded', function() {
+      const form = document.getElementById("sverkanIdForm");
+      const messageBox = document.getElementById("loginMessage");
+      form.addEventListener("submit", (e) => {
+        e.preventDefault();
+        const username = document.getElementById("sverkanId").value.trim();
+        const password = document.getElementById("sverkanPassword").value;
+        if (!username || !password) {
+          messageBox.textContent = "Fyll i både Sverkan ID och lösenord";
+          messageBox.className = "message error";
+          return;
+        }
+        messageBox.textContent = "Loggar in...";
+        messageBox.className = "message success";
+        fetch(`/auth/sverkan-login?username=${encodeURIComponent(username)}&password=${encodeURIComponent(password)}&mode=shell`, {
+          method: 'GET',
+        })
+        .then(async res => {
+          if (res.redirected) {
+            window.location.href = res.url;
+            return;
+          }
+          const text = await res.text();
+          if (res.ok && !text.includes('Login misslyckades')) {
+            window.location.href = "/home/shell";
+          } else {
+            // Try to extract error message from HTML, fallback to default
+            const match = text.match(/<title>(.*?)<\/title>/i);
+            let errorMsg = "Fel ID eller lösenord. Försök igen.";
+            if (match && match[1].toLowerCase().includes('misslyckades')) {
+              errorMsg = "Fel Sverkan ID eller lösenord.";
+            }
+            messageBox.textContent = errorMsg;
+            messageBox.className = "message error";
+          }
+        })
+        .catch(() => {
+          messageBox.textContent = "Nätverksfel. Försök igen.";
+          messageBox.className = "message error";
+        });
+      });
+    });
+  </script>
+</body>
+</html>

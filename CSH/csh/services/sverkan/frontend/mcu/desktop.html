@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+  <meta charset="UTF-8">
+  <title>MCU Kontrollpanel</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    body { font-family: system-ui, sans-serif; background: #0a0e17; color: #f5f7fb; margin: 0; }
+    .container { max-width: 700px; margin: 40px auto; background: #181f2b; border-radius: 18px; box-shadow: 0 4px 32px #0008; padding: 32px; }
+    h1 { text-align: center; margin-bottom: 24px; }
+    .section { margin-bottom: 32px; }
+    label { display: block; margin-bottom: 8px; font-weight: 600; }
+    input[type=text], select { width: 100%; padding: 10px; border-radius: 8px; border: 1px solid #2a3140; background: #232b3a; color: #f5f7fb; margin-bottom: 12px; }
+    button { background: #2e7dff; color: #fff; border: none; border-radius: 8px; padding: 12px 24px; font-size: 1rem; cursor: pointer; transition: background 0.2s; }
+    button:hover { background: #1b4fa0; }
+    .info-box { background: #232b3a; border-radius: 8px; padding: 16px; margin-bottom: 16px; }
+    .dns { font-family: monospace; color: #aeeaff; }
+    .success { color: #7fff7f; }
+    .error { color: #ff7f7f; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Master Control User (MCU)</h1>
+    <div class="section">
+      <h2>Serveradress & DNS</h2>
+      <div class="info-box">
+        <div>Nuvarande adress: <span id="currentAddress" class="dns">Laddar...</span></div>
+        <div>Publik IP: <span id="publicIp" class="dns">Laddar...</span></div>
+        <div>Lokal IP: <span id="localIp" class="dns">Laddar...</span></div>
+      </div>
+      <form id="addressForm">
+        <label for="serverAddress">Ange ny serveradress (IP eller domän):</label>
+        <input type="text" id="serverAddress" placeholder="t.ex. sverkan.oscyra.solutions">
+        <button type="submit">Uppdatera adress</button>
+        <div id="addressMsg"></div>
+      </form>
+    </div>
+    <div class="section">
+      <h2>MCU Kontrollfunktioner</h2>
+      <ul>
+        <li>Hantera serveradress och DNS</li>
+        <li>Visa publik IP</li>
+        <li>Visa och ändra systeminställningar</li>
+        <li>Visa användarloggar</li>
+        <li>Hantera användare och roller</li>
+        <li>Starta/stoppa om servern</li>
+      </ul>
+    </div>
+  </div>
+  <script>
+    async function fetchCurrentAddress() {
+      const res = await fetch('/api/mcu/address');
+      if (res.ok) {
+        const data = await res.json();
+        document.getElementById('currentAddress').textContent = data.address || 'Okänd';
+      }
+    }
+    async function fetchPublicIp() {
+      const res = await fetch('https://api.ipify.org?format=json');
+      if (res.ok) {
+        const data = await res.json();
+        document.getElementById('publicIp').textContent = data.ip;
+      }
+    }
+    async function fetchLocalIp() {
+      const res = await fetch('/api/mcu/localip');
+      if (res.ok) {
+        const data = await res.json();
+        document.getElementById('localIp').textContent = data.local_ip;
+      }
+    }
+    document.getElementById('addressForm').addEventListener('submit', async function(e) {
+      e.preventDefault();
+      const address = document.getElementById('serverAddress').value.trim();
+      const msg = document.getElementById('addressMsg');
+      msg.textContent = '';
+      if (!address) {
+        msg.textContent = 'Du måste ange en adress.';
+        msg.className = 'error';
+        return;
+      }
+      const res = await fetch('/api/mcu/address', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ address })
+      });
+      if (res.ok) {
+        msg.textContent = 'Adressen har uppdaterats!';
+        msg.className = 'success';
+        fetchCurrentAddress();
+      } else {
+        msg.textContent = 'Kunde inte uppdatera adressen.';
+        msg.className = 'error';
+      }
+    });
+    fetchCurrentAddress();
+    fetchPublicIp();
+    fetchLocalIp();
+  </script>
+</body>
+</html>

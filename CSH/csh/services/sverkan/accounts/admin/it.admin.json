@@ -1,0 +1,17 @@
+{
+  "id": "admin-0001",
+  "username": "it.admin",
+  "password_hash": "240be518fabd2724ddb6f04eeb1da5967448d7e831c08c8fa822809f74c720a9",
+  "role": "admin",
+  "full_name": "IT Administrator",
+  "email": "it@demo.se",
+  "status": "active",
+  "created_at": "2026-02-16T00:00:00Z",
+  "last_login": "2026-02-19T11:00:00.795952+00:00",
+  "desktop_type": "admin",
+  "available_apps": [
+    "skola",
+    "admin_panel"
+  ],
+  "meta": {}
+}

@@ -1,0 +1,1552 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+  <meta charset="UTF-8" />
+  <title>Sverkan Desktop</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+      user-select: none;
+    }
+
+    body {
+      font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+      background: linear-gradient(135deg, #0a0f1e 0%, #1a2332 100%);
+      overflow: hidden;
+      height: 100vh;
+      position: relative;
+    }
+
+    /* Desktop Background */
+    .desktop-layer {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 50px;
+      z-index: 1;
+    }
+
+    /* Desktop Icons */
+    .desktop-icons {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, 100px);
+      grid-auto-rows: 100px;
+      gap: 20px;
+      padding: 20px;
+      width: 100%;
+      height: 100%;
+    }
+
+    .icon {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      cursor: pointer;
+      padding: 10px;
+      border-radius: 8px;
+      transition: background 0.2s ease;
+    }
+
+    .icon:hover {
+      background: rgba(255, 255, 255, 0.1);
+    }
+
+    .icon.selected {
+      background: rgba(75, 163, 255, 0.3);
+    }
+
+    .icon.dragging {
+      opacity: 0.5;
+    }
+
+    .icon.drag-over {
+      outline: 1px dashed rgba(75, 163, 255, 0.9);
+      background: rgba(75, 163, 255, 0.12);
+    }
+
+    .icon-box {
+      width: 48px;
+      height: 48px;
+      border-radius: 10px;
+      background: linear-gradient(135deg, rgba(255, 255, 255, 0.1), rgba(0, 0, 0, 0.2));
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 2rem;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    }
+
+    .icon-name {
+      color: #ffffff;
+      font-size: 0.85rem;
+      text-align: center;
+      text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
+    }
+
+    /* Window Container */
+    .window-layer {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 50px;
+      pointer-events: none;
+      z-index: 50;
+    }
+
+    /* Window */
+    .window {
+      position: absolute;
+      background: #0e1219;
+      border: 1px solid #242a38;
+      border-radius: 12px;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+      display: flex;
+      flex-direction: column;
+      pointer-events: auto;
+      min-width: 400px;
+      min-height: 300px;
+      overflow: hidden;
+      z-index: 100;
+    }
+
+    .window.maximized {
+      top: 0 !important;
+      left: 0 !important;
+      width: calc(100vw) !important;
+      height: calc(100vh - 50px) !important;
+      border-radius: 0;
+    }
+
+    .window.minimized {
+      display: none;
+    }
+
+    /* Window Titlebar */
+    .window-titlebar {
+      height: 40px;
+      background: linear-gradient(180deg, #151e30 0%, #0e1219 100%);
+      border-bottom: 1px solid #242a38;
+      display: flex;
+      align-items: center;
+      padding: 0 12px;
+      cursor: move;
+    }
+
+    .window-title {
+      flex: 1;
+      color: #f5f7fb;
+      font-size: 0.9rem;
+      font-weight: 500;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .window-icon {
+      width: 20px;
+      height: 20px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1rem;
+    }
+
+    .window-controls {
+      display: flex;
+      gap: 8px;
+    }
+
+    .window-btn {
+      width: 32px;
+      height: 32px;
+      border: none;
+      background: transparent;
+      color: #a4afc4;
+      cursor: pointer;
+      border-radius: 6px;
+      transition: all 0.2s ease;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1rem;
+    }
+
+    .window-btn:hover {
+      background: rgba(255, 255, 255, 0.1);
+    }
+
+    .window-btn.close:hover {
+      background: #e81123;
+      color: white;
+    }
+
+    /* Window Content */
+    .window-content {
+      flex: 1;
+      background: #05070b;
+      overflow: hidden;
+      position: relative;
+    }
+
+    .window-content iframe {
+      width: 100%;
+      height: 100%;
+      border: none;
+    }
+
+    /* Taskbar */
+    .taskbar {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      height: 50px;
+      background: linear-gradient(180deg, #0e1219 0%, #05070b 100%);
+      border-top: 1px solid #242a38;
+      display: flex;
+      align-items: center;
+      padding: 0 12px;
+      gap: 8px;
+      z-index: 10000;
+    }
+
+    .start-btn {
+      width: 40px;
+      height: 40px;
+      border: none;
+      background: rgba(75, 163, 255, 0.15);
+      border: 1px solid rgba(75, 163, 255, 0.3);
+      border-radius: 8px;
+      color: #4ba3ff;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.3rem;
+      transition: all 0.2s ease;
+    }
+
+    .start-btn:hover {
+      background: rgba(75, 163, 255, 0.25);
+    }
+
+    .taskbar-apps {
+      flex: 1;
+      display: flex;
+      gap: 8px;
+      overflow-x: auto;
+    }
+
+    .taskbar-app {
+      min-width: 180px;
+      height: 40px;
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 6px;
+      padding: 0 12px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      color: #a4afc4;
+    }
+
+    .taskbar-app:hover {
+      background: rgba(255, 255, 255, 0.1);
+      border-color: rgba(75, 163, 255, 0.5);
+    }
+
+    .taskbar-app.active {
+      background: rgba(75, 163, 255, 0.2);
+      border-color: #4ba3ff;
+      color: #f5f7fb;
+    }
+
+    .taskbar-app.external {
+      opacity: 0.9;
+    }
+
+    .taskbar-app.pinned {
+      border-style: dashed;
+    }
+
+    .taskbar-menu {
+      position: fixed;
+      background: #0b1220;
+      border: 1px solid #1f2a3f;
+      border-radius: 10px;
+      min-width: 180px;
+      padding: 6px;
+      z-index: 20000;
+      display: none;
+      box-shadow: 0 12px 30px rgba(0, 0, 0, 0.45);
+    }
+
+    .taskbar-menu.show { display: block; }
+
+    .taskbar-menu button {
+      width: 100%;
+      background: transparent;
+      border: none;
+      color: #f5f7fb;
+      padding: 8px 10px;
+      text-align: left;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 0.85rem;
+    }
+
+    .taskbar-menu button:hover {
+      background: rgba(75, 163, 255, 0.15);
+    }
+
+    .taskbar-app-icon {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.2rem;
+    }
+
+    .taskbar-app-name {
+      flex: 1;
+      font-size: 0.85rem;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .taskbar-system {
+      display: flex;
+      gap: 16px;
+      align-items: center;
+      padding-left: 16px;
+      border-left: 1px solid #242a38;
+    }
+
+    .system-info {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      font-size: 0.8rem;
+      color: #a4afc4;
+    }
+
+    .system-time {
+      font-weight: 500;
+      color: #f5f7fb;
+    }
+
+    .system-date {
+      font-size: 0.7rem;
+    }
+
+    .system-user {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 12px;
+      background: rgba(75, 163, 255, 0.1);
+      border-radius: 6px;
+      color: #4ba3ff;
+      font-size: 0.85rem;
+    }
+
+    .user-role {
+      padding: 2px 8px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.12);
+      color: #f5f7fb;
+      font-size: 0.7rem;
+      letter-spacing: 0.3px;
+      text-transform: uppercase;
+    }
+
+    /* Custom Alert/Confirm */
+    .modal-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0, 0, 0, 0.7);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 999999;
+    }
+
+    .modal-overlay.show {
+      display: flex;
+    }
+
+    .modal {
+      background: #151e30;
+      border: 1px solid #242a38;
+      border-radius: 12px;
+      padding: 24px;
+      min-width: 400px;
+      max-width: 500px;
+      box-shadow: 0 12px 48px rgba(0, 0, 0, 0.5);
+    }
+
+    .modal-title {
+      color: #f5f7fb;
+      font-size: 1.1rem;
+      font-weight: 600;
+      margin-bottom: 16px;
+    }
+
+    .modal-message {
+      color: #a4afc4;
+      font-size: 0.95rem;
+      margin-bottom: 24px;
+      line-height: 1.5;
+    }
+
+    .modal-buttons {
+      display: flex;
+      gap: 12px;
+      justify-content: flex-end;
+    }
+
+    .modal-btn {
+      padding: 10px 24px;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 0.9rem;
+      font-weight: 500;
+      transition: all 0.2s ease;
+    }
+
+    .modal-btn.primary {
+      background: #4ba3ff;
+      color: #020309;
+    }
+
+    .modal-btn.primary:hover {
+      background: #5fb4ff;
+    }
+
+    .modal-btn.secondary {
+      background: rgba(255, 255, 255, 0.1);
+      color: #f5f7fb;
+    }
+
+    .modal-btn.secondary:hover {
+      background: rgba(255, 255, 255, 0.15);
+    }
+
+    /* Resize Handle */
+    .resize-handle {
+      position: absolute;
+      bottom: 0;
+      right: 0;
+      width: 16px;
+      height: 16px;
+      cursor: nwse-resize;
+      z-index: 10;
+    }
+
+    /* Scrollbar */
+    .taskbar-apps::-webkit-scrollbar {
+      height: 4px;
+    }
+
+    .taskbar-apps::-webkit-scrollbar-track {
+      background: transparent;
+    }
+
+    .taskbar-apps::-webkit-scrollbar-thumb {
+      background: rgba(75, 163, 255, 0.3);
+      border-radius: 2px;
+    }
+  </style>
+</head>
+<body>
+  <!-- Desktop Layer -->
+  <div class="desktop-layer">
+    <div class="desktop-icons" id="desktopIcons">
+      <!-- Icons will be populated by JS -->
+    </div>
+  </div>
+
+  <!-- Window Layer -->
+  <div class="window-layer" id="windowLayer">
+    <!-- Windows will be created here -->
+  </div>
+
+  <!-- Taskbar -->
+  <div class="taskbar">
+    <button class="start-btn" id="startBtn" title="Start">⊞</button>
+    <div class="taskbar-apps" id="taskbarApps">
+      <!-- Running apps will appear here -->
+    </div>
+    <div class="taskbar-system">
+      <div class="system-info">
+        <div class="system-time" id="systemTime">00:00</div>
+        <div class="system-date" id="systemDate">2024-01-01</div>
+      </div>
+      <div class="notifications-bell" id="notificationsBell" title="Aviseringar" style="position:relative; cursor:pointer; margin-right:8px;">
+        <span style="font-size:1.3rem;">🔔</span>
+        <span id="notificationsCount" style="position:absolute;top:-6px;right:-6px;background:#e81123;color:#fff;font-size:0.7rem;padding:2px 6px;border-radius:999px;display:none;">0</span>
+      </div>
+      <div class="system-user" id="systemUser" style="position:relative; cursor:pointer;">
+        <span>👤</span>
+        <span id="userName">Elev</span>
+        <span id="userRole" class="user-role">Student</span>
+        <span style="margin-left:6px;">▼</span>
+        <div id="userMenuDropdown" style="display:none;position:absolute;top:110%;right:0;background:#151e30;border:1px solid #242a38;border-radius:10px;min-width:180px;z-index:99999;box-shadow:0 8px 32px rgba(75,163,255,0.12);">
+          <button class="user-menu-item" onclick="showProfile()">Min profil / Inställningar</button>
+          <button class="user-menu-item" onclick="showChangePassword()">Byt lösenord</button>
+          <button class="user-menu-item" onclick="logout()">Logga ut</button>
+          <button class="user-menu-item" onclick="showAbout()">Om Sverkan</button>
+        </div>
+      </div>
+    </div>
+    <!-- Notifications Dropdown -->
+    <div id="notificationsDropdown" style="display:none;position:fixed;top:60px;right:32px;background:#151e30;border:1px solid #242a38;border-radius:10px;min-width:260px;z-index:99999;box-shadow:0 8px 32px rgba(75,163,255,0.12);padding:12px;">
+      <div style="font-weight:600;color:#4ba3ff;margin-bottom:8px;">Aviseringar</div>
+      <div id="notificationsList" style="max-height:220px;overflow-y:auto;font-size:0.95rem;color:#f5f7fb;"></div>
+      <button onclick="closeNotifications()" style="margin-top:8px;background:#4ba3ff;color:#fff;border:none;border-radius:6px;padding:6px 18px;cursor:pointer;">Stäng</button>
+    </div>
+    <!-- Desktop Right-Click Menu -->
+    <div id="desktopContextMenu" style="display:none;position:fixed;z-index:99999;background:#151e30;border:1px solid #242a38;border-radius:10px;min-width:180px;box-shadow:0 8px 32px rgba(75,163,255,0.12);">
+      <button class="desktop-menu-item" onclick="refreshDesktop()">Uppdatera skrivbord</button>
+      <button class="desktop-menu-item" onclick="showSettings()">Inställningar</button>
+      <button class="desktop-menu-item" onclick="logout()">Logga ut</button>
+    </div>
+    <script>
+    // User Menu Dropdown
+    const systemUser = document.getElementById('systemUser');
+    const userMenuDropdown = document.getElementById('userMenuDropdown');
+    systemUser.addEventListener('click', function(e) {
+      e.stopPropagation();
+      userMenuDropdown.style.display = userMenuDropdown.style.display === 'block' ? 'none' : 'block';
+    });
+    document.addEventListener('click', function(e) {
+      if (!systemUser.contains(e.target)) userMenuDropdown.style.display = 'none';
+    });
+
+    // User Menu Actions
+    window.showProfile = function() {
+      desktopManager.showAlert('Min profil', 'Profil och inställningar kommer snart!');
+      userMenuDropdown.style.display = 'none';
+    };
+    window.showChangePassword = function() {
+      desktopManager.showAlert('Byt lösenord', 'Funktion för att byta lösenord kommer snart!');
+      userMenuDropdown.style.display = 'none';
+    };
+    window.logout = function() {
+      window.location.href = '../login/login.html';
+    };
+    window.showAbout = function() {
+      desktopManager.showAlert('Om Sverkan', 'Sverkan – Sveriges digitala skolplattform. Version 1.0.');
+      userMenuDropdown.style.display = 'none';
+    };
+
+    // Notifications Bell
+    const notificationsBell = document.getElementById('notificationsBell');
+    const notificationsDropdown = document.getElementById('notificationsDropdown');
+    notificationsBell.addEventListener('click', function(e) {
+      e.stopPropagation();
+      notificationsDropdown.style.display = notificationsDropdown.style.display === 'block' ? 'none' : 'block';
+    });
+    document.addEventListener('click', function(e) {
+      if (!notificationsDropdown.contains(e.target) && !notificationsBell.contains(e.target)) notificationsDropdown.style.display = 'none';
+    });
+    window.closeNotifications = function() {
+      notificationsDropdown.style.display = 'none';
+    };
+    // Example notifications
+    function loadNotifications() {
+      const notifications = [
+        { text: 'Nytt schema för klass 9A', time: '2026-02-16 08:00' },
+        { text: 'Inlämning: Matematikuppgift', time: '2026-02-15 17:00' },
+        { text: 'Lektion inställd: Engelska', time: '2026-02-14 10:00' }
+      ];
+      const list = document.getElementById('notificationsList');
+      list.innerHTML = notifications.map(n => `<div style='margin-bottom:6px;'>${n.text}<br><span style='color:#a4afc4;font-size:0.8em;'>${n.time}</span></div>`).join('');
+      const count = notifications.length;
+      const countSpan = document.getElementById('notificationsCount');
+      if (count > 0) {
+        countSpan.textContent = count;
+        countSpan.style.display = 'block';
+      } else {
+        countSpan.style.display = 'none';
+      }
+    }
+    loadNotifications();
+
+    // Desktop Right-Click Menu
+    const desktopLayer = document.querySelector('.desktop-layer');
+    const desktopContextMenu = document.getElementById('desktopContextMenu');
+    desktopLayer.addEventListener('contextmenu', function(e) {
+      e.preventDefault();
+      desktopContextMenu.style.display = 'block';
+      desktopContextMenu.style.left = `${e.clientX}px`;
+      desktopContextMenu.style.top = `${e.clientY}px`;
+    });
+    document.addEventListener('click', function(e) {
+      if (!desktopContextMenu.contains(e.target)) desktopContextMenu.style.display = 'none';
+    });
+    window.refreshDesktop = function() {
+      desktopManager.showAlert('Uppdatera', 'Skrivbordet har uppdaterats!');
+      desktopContextMenu.style.display = 'none';
+    };
+    window.showSettings = function() {
+      desktopManager.showAlert('Inställningar', 'Inställningar kommer snart!');
+      desktopContextMenu.style.display = 'none';
+    };
+    // Logout already defined above
+    </script>
+  </div>
+
+  <!-- Custom Modal -->
+  <div class="modal-overlay" id="modalOverlay">
+    <div class="modal">
+      <div class="modal-title" id="modalTitle">Meddelande</div>
+      <div class="modal-message" id="modalMessage"></div>
+      <div class="modal-buttons" id="modalButtons"></div>
+    </div>
+  </div>
+
+  <!-- Taskbar context menu -->
+  <div class="taskbar-menu" id="taskbarMenu"></div>
+
+  <script>
+  /**
+   * Sverkan Desktop Manager
+   * Window management system with proper Z-ordering, taskbar integration,
+   * and browser behavior overrides
+   */
+
+  class DesktopManager {
+    constructor() {
+      this.windows = new Map();
+      this.nextWindowId = 1;
+      this.topZIndex = 100;
+      this.apps = [];
+      this.currentUsername = null;
+      this.externalApps = new Map();
+      this.pinnedApps = new Set();
+      this.init();
+    }
+
+    init() {
+      // Block all browser shortcuts and behaviors
+      this.blockBrowserShortcuts();
+
+      // Keep desktop alive
+      this.keepDesktopAlive();
+      
+      // Override alert/confirm
+      this.overrideDialogs();
+      
+      // Initialize desktop icons (fallback)
+      this.setApps(this.getDefaultApps());
+      
+      // Start clock
+      this.updateClock();
+      setInterval(() => this.updateClock(), 1000);
+      
+      // Load user info
+      this.loadUserInfo();
+
+      // Auto refresh user data/apps
+      setInterval(() => this.loadUserInfo(true), 15000);
+
+      // Sync external app status
+      setInterval(() => this.syncExternalApps(), 5000);
+      
+      // Prevent context menu
+      document.addEventListener('contextmenu', (e) => e.preventDefault());
+
+      // Hide taskbar menu on click
+      document.addEventListener('click', () => this.hideTaskbarMenu());
+      
+      // Start button
+      document.getElementById('startBtn').addEventListener('click', () => {
+        this.showAlert('Start-menyn', 'Start-menyn kommer snart!');
+      });
+    }
+
+    blockBrowserShortcuts() {
+      document.addEventListener('keydown', (e) => {
+        // Block ESC
+        if (e.key === 'Escape') {
+          e.preventDefault();
+          return false;
+        }
+        
+        // Block F11 (fullscreen)
+        if (e.key === 'F11') {
+          e.preventDefault();
+          return false;
+        }
+        
+        // Block Ctrl+W (close tab)
+        if (e.ctrlKey && e.key === 'w') {
+          e.preventDefault();
+          return false;
+        }
+        
+        // Block Ctrl+T (new tab)
+        if (e.ctrlKey && e.key === 't') {
+          e.preventDefault();
+          return false;
+        }
+        
+        // Block Ctrl+N (new window)
+        if (e.ctrlKey && e.key === 'n') {
+          e.preventDefault();
+          return false;
+        }
+        
+        // Block Ctrl+Shift+I (devtools)
+        if (e.ctrlKey && e.shiftKey && e.key === 'I') {
+          e.preventDefault();
+          return false;
+        }
+        
+        // Block F12 (devtools)
+        if (e.key === 'F12') {
+          e.preventDefault();
+          return false;
+        }
+      });
+    }
+
+    overrideDialogs() {
+      // Override window.alert
+      window.alert = (message) => {
+        this.showAlert('Meddelande', message);
+      };
+      
+      // Override window.confirm
+      window.confirm = (message) => {
+        return this.showConfirm('Bekräfta', message);
+      };
+    }
+
+    keepDesktopAlive() {
+      // Prevent accidental tab close
+      window.addEventListener('beforeunload', (e) => {
+        e.preventDefault();
+        e.returnValue = '';
+      });
+
+      // Ensure desktop layer exists
+      setInterval(() => {
+        const icons = document.getElementById('desktopIcons');
+        if (!icons) {
+          location.reload();
+        }
+      }, 5000);
+    }
+
+    showAlert(title, message) {
+      const overlay = document.getElementById('modalOverlay');
+      const modalTitle = document.getElementById('modalTitle');
+      const modalMessage = document.getElementById('modalMessage');
+      const modalButtons = document.getElementById('modalButtons');
+      
+      modalTitle.textContent = title;
+      modalMessage.textContent = message;
+      modalButtons.innerHTML = '<button class="modal-btn primary" onclick="desktopManager.hideModal()">OK</button>';
+      
+      overlay.classList.add('show');
+    }
+
+    showConfirm(title, message) {
+      // For now, just show alert (true async confirm needs Promise)
+      this.showAlert(title, message + '\\n\\n(Bekräftelse kommer snart)');
+      return true;
+    }
+
+    hideModal() {
+      document.getElementById('modalOverlay').classList.remove('show');
+    }
+
+    showTaskbarMenu(x, y, items) {
+      const menu = document.getElementById('taskbarMenu');
+      if (!menu) return;
+      menu.innerHTML = '';
+
+      items.forEach(item => {
+        const btn = document.createElement('button');
+        btn.textContent = item.label;
+        btn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          this.hideTaskbarMenu();
+          item.action();
+        });
+        menu.appendChild(btn);
+      });
+
+      menu.style.left = `${x}px`;
+      menu.style.top = `${y}px`;
+      menu.classList.add('show');
+    }
+
+    hideTaskbarMenu() {
+      const menu = document.getElementById('taskbarMenu');
+      if (menu) menu.classList.remove('show');
+    }
+
+    initDesktopIcons() {
+      const iconsContainer = document.getElementById('desktopIcons');
+      iconsContainer.innerHTML = '';
+
+      this.apps.forEach(app => {
+        const icon = document.createElement('div');
+        icon.className = 'icon';
+        icon.dataset.app = app.id;
+        icon.setAttribute('draggable', 'true');
+        icon.innerHTML = `
+          <div class="icon-box">${app.icon}</div>
+          <div class="icon-name">${app.name}</div>
+        `;
+        
+        // Single click = select
+        icon.addEventListener('click', () => {
+          document.querySelectorAll('.icon').forEach(i => i.classList.remove('selected'));
+          icon.classList.add('selected');
+        });
+        
+        // Double click = launch
+        icon.addEventListener('dblclick', () => {
+          this.launchApp(app);
+        });
+
+        // Drag & drop reorder
+        icon.addEventListener('dragstart', (e) => {
+          e.dataTransfer.effectAllowed = 'move';
+          e.dataTransfer.setData('text/plain', app.id);
+          icon.classList.add('dragging');
+        });
+
+        icon.addEventListener('dragend', () => {
+          icon.classList.remove('dragging');
+        });
+
+        icon.addEventListener('dragover', (e) => {
+          e.preventDefault();
+          icon.classList.add('drag-over');
+        });
+
+        icon.addEventListener('dragleave', () => {
+          icon.classList.remove('drag-over');
+        });
+
+        icon.addEventListener('drop', (e) => {
+          e.preventDefault();
+          icon.classList.remove('drag-over');
+          const sourceId = e.dataTransfer.getData('text/plain');
+          if (!sourceId || sourceId === app.id) return;
+          this.moveIcon(sourceId, app.id);
+        });
+        
+        iconsContainer.appendChild(icon);
+      });
+    }
+
+    getDefaultApps() {
+      return [
+        { id: 'skola', name: 'Skola', icon: '📚', url: '/skola-app', color: '#4ba3ff' },
+        { id: 'klar', name: 'Klar', icon: '🌐', url: null, color: '#5fd4b0' },
+        { id: 'word', name: 'Word', icon: '📄', url: null, color: '#2b579a' },
+        { id: 'excel', name: 'Excel', icon: '📊', url: null, color: '#217346' },
+        { id: 'powerpoint', name: 'PowerPoint', icon: '📽️', url: null, color: '#d24726' },
+        { id: 'publisher', name: 'Publisher', icon: '📰', url: null, color: '#077568' },
+      ];
+    }
+
+    normalizeApps(apiApps) {
+      const urlMap = {
+        skola: '/skola-app'
+      };
+
+      const isWebPath = (value) => {
+        if (!value) return false;
+        return value.startsWith('/') || value.startsWith('http://') || value.startsWith('https://');
+      };
+
+      return apiApps.map(app => ({
+        id: app.app_id,
+        name: app.app_name,
+        icon: app.app_icon || '📦',
+        url: isWebPath(app.app_path) ? app.app_path : (urlMap[app.app_id] || null),
+        launchPath: isWebPath(app.app_path) ? null : (app.app_path || null),
+        color: app.app_color || '#4ba3ff'
+      }));
+    }
+
+    getOrderKey() {
+      const username = this.currentUsername || 'guest';
+      return `sverkan.desktop.order.${username}`;
+    }
+
+    getPinnedKey() {
+      const username = this.currentUsername || 'guest';
+      return `sverkan.desktop.pinned.${username}`;
+    }
+
+    loadPinnedApps() {
+      try {
+        const raw = localStorage.getItem(this.getPinnedKey());
+        const parsed = JSON.parse(raw || '[]');
+        if (Array.isArray(parsed)) {
+          this.pinnedApps = new Set(parsed);
+        }
+      } catch (e) {
+        this.pinnedApps = new Set();
+      }
+    }
+
+    savePinnedApps() {
+      try {
+        localStorage.setItem(this.getPinnedKey(), JSON.stringify(Array.from(this.pinnedApps)));
+      } catch (e) {
+        // ignore storage errors
+      }
+    }
+
+    loadIconOrder() {
+      try {
+        const raw = localStorage.getItem(this.getOrderKey());
+        const parsed = JSON.parse(raw || '[]');
+        return Array.isArray(parsed) ? parsed : [];
+      } catch (e) {
+        return [];
+      }
+    }
+
+    saveIconOrder() {
+      try {
+        const order = this.apps.map(app => app.id);
+        localStorage.setItem(this.getOrderKey(), JSON.stringify(order));
+      } catch (e) {
+        // ignore storage errors
+      }
+    }
+
+    applyOrder(apps, order) {
+      if (!order || !order.length) return apps;
+
+      const byId = new Map(apps.map(app => [app.id, app]));
+      const ordered = [];
+
+      order.forEach(id => {
+        if (byId.has(id)) {
+          ordered.push(byId.get(id));
+          byId.delete(id);
+        }
+      });
+
+      byId.forEach((app) => ordered.push(app));
+      return ordered;
+    }
+
+    moveIcon(sourceId, targetId) {
+      const sourceIndex = this.apps.findIndex(app => app.id === sourceId);
+      const targetIndex = this.apps.findIndex(app => app.id === targetId);
+      if (sourceIndex < 0 || targetIndex < 0) return;
+
+      const newApps = [...this.apps];
+      const [moved] = newApps.splice(sourceIndex, 1);
+      newApps.splice(targetIndex, 0, moved);
+
+      this.apps = newApps;
+      this.saveIconOrder();
+      this.initDesktopIcons();
+    }
+
+    setApps(apps) {
+      const baseApps = apps && apps.length ? apps : this.getDefaultApps();
+      const order = this.loadIconOrder();
+      this.apps = this.applyOrder(baseApps, order);
+      this.initDesktopIcons();
+      this.saveIconOrder();
+    }
+
+    launchApp(app) {
+      // Always launch via local Qt client HTTP server for all apps with a launchPath
+      if (app.launchPath) {
+        this.launchLocalApp(app);
+        return;
+      }
+      // If it's a web app, open in window
+      if (app.url) {
+        // Check if app is already open
+        const existingWindow = Array.from(this.windows.values())
+          .find(w => w.appId === app.id);
+        if (existingWindow) {
+          this.focusWindow(existingWindow.id);
+          return;
+        }
+        this.createWindow(app);
+        return;
+      }
+      // Otherwise, show not available
+      this.showAlert(app.name, `${app.name} kommer snart!\n\nDenna app är under utveckling och kommer att vara tillgänglig inom kort.`);
+    }
+
+    async launchLocalApp(app, forceNew = false) {
+      // Always launch via local qt_client.py HTTP server
+      if (app.launchPath) {
+        try {
+          // Optionally include user/session info for extra security
+          const user = (window.desktopManager && window.desktopManager.currentUser) ? window.desktopManager.currentUser : undefined;
+          const payload = { app_path: app.launchPath, app_id: app.id, user };
+          const res = await fetch('http://127.0.0.1:17345/local-launch', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+          });
+          if (res.ok) {
+            this.registerExternalApp(app);
+            return;
+          } else {
+            const data = await res.json().catch(() => ({}));
+            this.showAlert(app.name, data.error || 'Kunde inte starta appen på din dator.');
+            return;
+          }
+        } catch (e) {
+          this.showAlert(app.name, 'Kunde inte kontakta Sverkan-klienten på din dator.\nSe till att Sverkan är igång.');
+        }
+      } else {
+        this.showAlert(app.name, 'Ingen lokal sökväg angiven för appen.');
+      }
+    }
+
+    async activateExternalApp(app) {
+      try {
+        const res = await fetch('/api/activate-app', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ app_id: app.id })
+        });
+
+        if (!res.ok) {
+          // Fallback to launch
+          await this.launchLocalApp(app);
+          return;
+        }
+      } catch (error) {
+        await this.launchLocalApp(app);
+      }
+    }
+
+    async syncExternalApps() {
+      // Poll qt_client.py for running local apps
+      try {
+        const appIds = this.apps.map(app => app.id);
+        if (!appIds.length) return;
+        // Try local client first
+        let localStatus = {};
+        try {
+          const res = await fetch('http://127.0.0.1:17345/local-status', {
+            method: 'GET'
+          });
+          if (res.ok) {
+            localStatus = await res.json();
+          }
+        } catch (e) {}
+
+        // Fallback to server status
+        let serverStatus = {};
+        try {
+          const res = await fetch('/api/apps/status', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ app_ids: appIds })
+          });
+          if (res.ok) {
+            const data = await res.json();
+            serverStatus = data.status || {};
+          }
+        } catch (e) {}
+
+        let changed = false;
+        this.apps.forEach(app => {
+          const running = !!localStatus[app.id] || !!serverStatus[app.id];
+          if (running && !this.externalApps.has(app.id) && app.launchPath) {
+            this.externalApps.set(app.id, app);
+            changed = true;
+          }
+          if (!running && this.externalApps.has(app.id)) {
+            this.externalApps.delete(app.id);
+            changed = true;
+          }
+        });
+        if (changed) this.updateTaskbar();
+      } catch (error) {
+        // ignore sync errors
+      }
+    }
+
+    async closeExternalApp(app) {
+      // Try to close via local qt_client.py
+      if (app.launchPath) {
+        try {
+          const res = await fetch('http://127.0.0.1:17345/local-close', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ app_path: app.launchPath })
+          });
+          if (res.ok) {
+            this.externalApps.delete(app.id);
+            this.updateTaskbar();
+            return;
+          }
+        } catch (e) {}
+      }
+      // Fallback to server
+      try {
+        const res = await fetch('/api/close-app', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ app_id: app.id })
+        });
+        if (res.ok) {
+          this.externalApps.delete(app.id);
+          this.updateTaskbar();
+        } else {
+          const data = await res.json();
+          this.showAlert(app.name, data.error || 'Kunde inte stänga appen.');
+        }
+      } catch (error) {
+        this.showAlert(app.name, 'Kunde inte stänga appen.');
+      }
+    }
+
+    registerExternalApp(app) {
+      if (!this.externalApps.has(app.id)) {
+        this.externalApps.set(app.id, app);
+        this.updateTaskbar();
+      }
+      // Start polling for app status
+      this.syncExternalApps();
+    }
+
+    createWindow(app) {
+      const windowId = this.nextWindowId++;
+      
+      // Create window element
+      const windowEl = document.createElement('div');
+      windowEl.className = 'window';
+      windowEl.id = `window-${windowId}`;
+      windowEl.style.zIndex = this.topZIndex++;
+      
+      // Default size and position
+      const width = 1000;
+      const height = 700;
+      const left = (window.innerWidth - width) / 2;
+      const top = (window.innerHeight - 50 - height) / 2;
+      
+      windowEl.style.width = width + 'px';
+      windowEl.style.height = height + 'px';
+      windowEl.style.left = left + 'px';
+      windowEl.style.top = top + 'px';
+      
+      windowEl.innerHTML = `
+        <div class="window-titlebar">
+          <div class="window-title">
+            <div class="window-icon">${app.icon}</div>
+            <span>${app.name}</span>
+          </div>
+          <div class="window-controls">
+            <button class="window-btn minimize" data-action="minimize">−</button>
+            <button class="window-btn maximize" data-action="maximize">□</button>
+            <button class="window-btn close" data-action="close">×</button>
+          </div>
+        </div>
+        <div class="window-content">
+          <iframe src="${app.url}" sandbox="allow-same-origin allow-scripts allow-forms"></iframe>
+        </div>
+        <div class="resize-handle"></div>
+      `;
+      
+      document.getElementById('windowLayer').appendChild(windowEl);
+      
+      // Store window info
+      const windowInfo = {
+        id: windowId,
+        appId: app.id,
+        app: app,
+        element: windowEl,
+        minimized: false,
+        maximized: false,
+        savedBounds: { left, top, width, height }
+      };
+      
+      this.windows.set(windowId, windowInfo);
+      
+      // Setup window interactions
+      this.setupWindowInteractions(windowInfo);
+      
+      // Add to taskbar
+      this.addToTaskbar(windowInfo);
+      
+      // Focus window
+      this.focusWindow(windowId);
+    }
+
+    setupWindowInteractions(windowInfo) {
+      const { element, id } = windowInfo;
+      
+      // Titlebar dragging
+      const titlebar = element.querySelector('.window-titlebar');
+      let isDragging = false;
+      let dragOffset = { x: 0, y: 0 };
+      
+      titlebar.addEventListener('mousedown', (e) => {
+        if (e.target.classList.contains('window-btn')) return;
+        
+        isDragging = true;
+        dragOffset.x = e.clientX - element.offsetLeft;
+        dragOffset.y = e.clientY - element.offsetTop;
+        
+        this.focusWindow(id);
+      });
+      
+      document.addEventListener('mousemove', (e) => {
+        if (!isDragging || windowInfo.maximized) return;
+        
+        const newLeft = e.clientX - dragOffset.x;
+        const newTop = Math.max(0, e.clientY - dragOffset.y);
+        
+        element.style.left = newLeft + 'px';
+        element.style.top = newTop + 'px';
+      });
+      
+      document.addEventListener('mouseup', () => {
+        isDragging = false;
+      });
+      
+      // Double-click titlebar to maximize
+      titlebar.addEventListener('dblclick', (e) => {
+        if (e.target.classList.contains('window-btn')) return;
+        this.toggleMaximize(id);
+      });
+      
+      // Window buttons
+      element.querySelector('[data-action="minimize"]').addEventListener('click', () => {
+        this.minimizeWindow(id);
+      });
+      
+      element.querySelector('[data-action="maximize"]').addEventListener('click', () => {
+        this.toggleMaximize(id);
+      });
+      
+      element.querySelector('[data-action="close"]').addEventListener('click', () => {
+        this.closeWindow(id);
+      });
+      
+      // Resize handle
+      const resizeHandle = element.querySelector('.resize-handle');
+      let isResizing = false;
+      let resizeStart = { x: 0, y: 0, width: 0, height: 0 };
+      
+      resizeHandle.addEventListener('mousedown', (e) => {
+        if (windowInfo.maximized) return;
+        
+        isResizing = true;
+        resizeStart.x = e.clientX;
+        resizeStart.y = e.clientY;
+        resizeStart.width = element.offsetWidth;
+        resizeStart.height = element.offsetHeight;
+        
+        e.stopPropagation();
+      });
+      
+      document.addEventListener('mousemove', (e) => {
+        if (!isResizing) return;
+        
+        const deltaX = e.clientX - resizeStart.x;
+        const deltaY = e.clientY - resizeStart.y;
+        
+        const newWidth = Math.max(400, resizeStart.width + deltaX);
+        const newHeight = Math.max(300, resizeStart.height + deltaY);
+        
+        element.style.width = newWidth + 'px';
+        element.style.height = newHeight + 'px';
+      });
+      
+      document.addEventListener('mouseup', () => {
+        isResizing = false;
+      });
+      
+      // Click window to focus
+      element.addEventListener('mousedown', () => {
+        this.focusWindow(id);
+      });
+    }
+
+    focusWindow(windowId) {
+      const windowInfo = this.windows.get(windowId);
+      if (!windowInfo || windowInfo.minimized) return;
+      
+      // Bring to front
+      windowInfo.element.style.zIndex = this.topZIndex++;
+      
+      // Update taskbar
+      this.updateTaskbar();
+    }
+
+    minimizeWindow(windowId) {
+      const windowInfo = this.windows.get(windowId);
+      if (!windowInfo) return;
+      
+      windowInfo.minimized = true;
+      windowInfo.element.classList.add('minimized');
+      
+      this.updateTaskbar();
+    }
+
+    toggleMaximize(windowId) {
+      const windowInfo = this.windows.get(windowId);
+      if (!windowInfo) return;
+      
+      if (windowInfo.maximized) {
+        // Restore
+        windowInfo.maximized = false;
+        windowInfo.element.classList.remove('maximized');
+        
+        const { left, top, width, height } = windowInfo.savedBounds;
+        windowInfo.element.style.left = left + 'px';
+        windowInfo.element.style.top = top + 'px';
+        windowInfo.element.style.width = width + 'px';
+        windowInfo.element.style.height = height + 'px';
+      } else {
+        // Maximize
+        windowInfo.maximized = true;
+        windowInfo.savedBounds = {
+          left: windowInfo.element.offsetLeft,
+          top: windowInfo.element.offsetTop,
+          width: windowInfo.element.offsetWidth,
+          height: windowInfo.element.offsetHeight
+        };
+        
+        windowInfo.element.classList.add('maximized');
+      }
+    }
+
+    closeWindow(windowId) {
+      const windowInfo = this.windows.get(windowId);
+      if (!windowInfo) return;
+      
+      windowInfo.element.remove();
+      this.windows.delete(windowId);
+      
+      this.updateTaskbar();
+    }
+
+    addToTaskbar(windowInfo) {
+      this.updateTaskbar();
+    }
+
+    updateTaskbar() {
+      const taskbarApps = document.getElementById('taskbarApps');
+      taskbarApps.innerHTML = '';
+
+      const pinned = this.apps.filter(app => this.pinnedApps.has(app.id));
+      pinned.forEach(app => {
+        const appBtn = document.createElement('div');
+        appBtn.className = 'taskbar-app pinned';
+        appBtn.innerHTML = `
+          <div class="taskbar-app-icon">${app.icon}</div>
+          <div class="taskbar-app-name">${app.name}</div>
+        `;
+
+        appBtn.addEventListener('click', () => {
+          this.launchApp(app);
+        });
+
+        appBtn.addEventListener('contextmenu', (e) => {
+          e.preventDefault();
+          const isPinned = this.pinnedApps.has(app.id);
+          this.showTaskbarMenu(e.clientX, e.clientY, [
+            {
+              label: 'Öppna ny instans',
+              action: () => this.launchApp(app)
+            },
+            {
+              label: isPinned ? 'Avfäst från aktivitetsfältet' : 'Fäst på aktivitetsfältet',
+              action: () => {
+                if (isPinned) this.pinnedApps.delete(app.id);
+                else this.pinnedApps.add(app.id);
+                this.savePinnedApps();
+                this.updateTaskbar();
+              }
+            }
+          ]);
+        });
+
+        taskbarApps.appendChild(appBtn);
+      });
+      
+      // Get windows sorted by z-index (last focused first)
+      const sortedWindows = Array.from(this.windows.values())
+        .sort((a, b) => parseInt(b.element.style.zIndex) - parseInt(a.element.style.zIndex));
+      
+      sortedWindows.forEach(windowInfo => {
+        const appBtn = document.createElement('div');
+        appBtn.className = 'taskbar-app';
+        if (!windowInfo.minimized) {
+          appBtn.classList.add('active');
+        }
+        
+        appBtn.innerHTML = `
+          <div class="taskbar-app-icon">${windowInfo.app.icon}</div>
+          <div class="taskbar-app-name">${windowInfo.app.name}</div>
+        `;
+        
+        appBtn.addEventListener('click', () => {
+          if (windowInfo.minimized) {
+            // Restore from minimized
+            windowInfo.minimized = false;
+            windowInfo.element.classList.remove('minimized');
+            this.focusWindow(windowInfo.id);
+          } else {
+            // Check if it's the topmost window
+            const topWindow = sortedWindows[0];
+            if (topWindow.id === windowInfo.id) {
+              // Minimize if clicked again
+              this.minimizeWindow(windowInfo.id);
+            } else {
+              // Focus
+              this.focusWindow(windowInfo.id);
+            }
+          }
+        });
+
+        appBtn.addEventListener('contextmenu', (e) => {
+          e.preventDefault();
+          const app = windowInfo.app;
+          const isPinned = this.pinnedApps.has(app.id);
+          this.showTaskbarMenu(e.clientX, e.clientY, [
+            {
+              label: 'Stäng',
+              action: () => this.closeWindow(windowInfo.id)
+            },
+            {
+              label: 'Öppna ny instans',
+              action: () => this.launchApp(app)
+            },
+            {
+              label: isPinned ? 'Avfäst från aktivitetsfältet' : 'Fäst på aktivitetsfältet',
+              action: () => {
+                if (isPinned) this.pinnedApps.delete(app.id);
+                else this.pinnedApps.add(app.id);
+                this.savePinnedApps();
+                this.updateTaskbar();
+              }
+            }
+          ]);
+        });
+        
+        taskbarApps.appendChild(appBtn);
+      });
+
+      // External apps (launched on OS)
+      this.externalApps.forEach(app => {
+        const appBtn = document.createElement('div');
+        appBtn.className = 'taskbar-app external';
+        appBtn.innerHTML = `
+          <div class="taskbar-app-icon">${app.icon}</div>
+          <div class="taskbar-app-name">${app.name}</div>
+        `;
+
+        appBtn.addEventListener('click', () => {
+          this.activateExternalApp(app);
+        });
+
+        appBtn.addEventListener('contextmenu', (e) => {
+          e.preventDefault();
+          const isPinned = this.pinnedApps.has(app.id);
+          this.showTaskbarMenu(e.clientX, e.clientY, [
+            {
+              label: 'Stäng',
+              action: () => this.closeExternalApp(app)
+            },
+            {
+              label: 'Öppna ny instans',
+              action: () => this.launchLocalApp(app, true)
+            },
+            {
+              label: isPinned ? 'Avfäst från aktivitetsfältet' : 'Fäst på aktivitetsfältet',
+              action: () => {
+                if (isPinned) this.pinnedApps.delete(app.id);
+                else this.pinnedApps.add(app.id);
+                this.savePinnedApps();
+                this.updateTaskbar();
+              }
+            }
+          ]);
+        });
+
+        taskbarApps.appendChild(appBtn);
+      });
+    }
+
+    updateClock() {
+      const now = new Date();
+      
+      const timeStr = now.toLocaleTimeString('sv-SE', {
+        hour: '2-digit',
+        minute: '2-digit'
+      });
+      
+      const dateStr = now.toLocaleDateString('sv-SE', {
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit'
+      });
+      
+      document.getElementById('systemTime').textContent = timeStr;
+      document.getElementById('systemDate').textContent = dateStr;
+    }
+
+    async loadUserInfo(silent = false) {
+      try {
+        const response = await fetch('/api/user');
+        if (response.ok) {
+          const data = await response.json();
+          const user = data.user || {};
+          this.currentUsername = user.username || user.name || 'guest';
+          this.loadPinnedApps();
+          const firstName = (user.name || user.username || 'Användare').split(' ')[0];
+          document.getElementById('userName').textContent = firstName;
+
+          const roleLabel = (data.desktop_type === 'it_admin' || user.role === 'it_admin')
+            ? 'Admin'
+            : 'Student';
+          document.getElementById('userRole').textContent = roleLabel;
+
+          const apps = this.normalizeApps(data.available_apps || []);
+          this.setApps(apps);
+        }
+      } catch (error) {
+        if (!silent) {
+          console.error('Failed to load user:', error);
+        }
+      }
+    }
+  }
+
+  // Initialize desktop manager
+  const desktopManager = new DesktopManager();
+  </script>
+</body>
+</html>

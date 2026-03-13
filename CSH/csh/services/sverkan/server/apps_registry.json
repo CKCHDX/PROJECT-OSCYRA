@@ -1,0 +1,51 @@
+{
+  "skola": {
+    "app_id": "skola",
+    "app_name": "Skola",
+    "app_icon": "📚",
+    "app_path": "/skola-app",
+    "app_color": "#4ba3ff"
+  },
+  "word": {
+    "app_id": "word",
+    "app_name": "Word",
+    "app_icon": "📄",
+    "app_path": null,
+    "app_color": "#2b579a"
+  },
+  "excel": {
+    "app_id": "excel",
+    "app_name": "Excel",
+    "app_icon": "📊",
+    "app_path": null,
+    "app_color": "#217346"
+  },
+  "powerpoint": {
+    "app_id": "powerpoint",
+    "app_name": "PowerPoint",
+    "app_icon": "📽️",
+    "app_path": null,
+    "app_color": "#d24726"
+  },
+  "publisher": {
+    "app_id": "publisher",
+    "app_name": "Publisher",
+    "app_icon": "📰",
+    "app_path": null,
+    "app_color": "#077568"
+  },
+  "admin_panel": {
+    "app_id": "admin_panel",
+    "app_name": "Adminpanel",
+    "app_icon": "👥",
+    "app_path": "/admin",
+    "app_color": "#ff6b6b"
+  },
+  "klar": {
+    "app_id": "klar",
+    "app_name": "Klar",
+    "app_icon": "🌐",
+    "app_path": null,
+    "app_color": "#5fd4b0"
+  }
+}
