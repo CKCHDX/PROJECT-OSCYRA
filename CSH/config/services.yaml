@@ -33,12 +33,12 @@ services:
     name: "Upsum"
     service_id: "upsum-001"
     version: "1.0.0"
-    http_port: 4273
+    http_port: 80
     domain: "upsum.oscyra.solutions"
     auto_restart: false
     launch:
-      command: "python -m uvicorn backend.main:app --host 127.0.0.1 --port 4273"
-      cwd: "csh/services/upsum"
+      command: ".venv/bin/uvicorn main:app --host 0.0.0.0 --port 80"
+      cwd: "csh/services/upsum/backend"
 
   testview:
     name: "TestView"
