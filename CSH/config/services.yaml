@@ -1,0 +1,52 @@
+# CSH Service Configuration
+# Each service defines its SLP identity, network binding, and launch command.
+
+gateway:
+  host: "127.0.0.1"
+  port: 14270
+  keys_dir: "keys"
+
+services:
+  klar:
+    name: "Klar"
+    service_id: "klar-001"
+    version: "1.0.0"
+    http_port: 4271
+    domain: "klar.oscyra.solutions"
+    auto_restart: true
+    launch:
+      command: "python api_server.py"
+      cwd: "../klar"
+
+  sverkan:
+    name: "Sverkan"
+    service_id: "sverkan-001"
+    version: "1.0.0"
+    http_port: 4272
+    domain: "sverkan.oscyra.solutions"
+    auto_restart: true
+    launch:
+      command: "python server/server.py"
+      cwd: "../sverkan"
+
+  upsum:
+    name: "Upsum"
+    service_id: "upsum-001"
+    version: "1.0.0"
+    http_port: 4273
+    domain: "upsum.oscyra.solutions"
+    auto_restart: false
+    launch:
+      command: "python -m uvicorn backend.main:app --host 127.0.0.1 --port 4273"
+      cwd: "../Upsum"
+
+  testview:
+    name: "TestView"
+    service_id: "testview-001"
+    version: "1.0.0"
+    http_port: 4274
+    domain: "testview.oscyra.solutions"
+    auto_restart: false
+    launch:
+      command: "python main.py"
+      cwd: "../testview"
