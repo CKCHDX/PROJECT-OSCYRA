@@ -81,7 +81,6 @@ ip_connections: List[WebSocket] = []
 services_procs: Dict[str, subprocess.Popen] = {}
 service_start_times: Dict[str, float] = {}
 current_public_ip: str = "Loading..."
-# Logs aggregated from SLP LOG_ENTRY messages.
 LOG_STORE: Dict[str, List[str]] = {}
 
 
@@ -116,7 +115,6 @@ async def _on_status_change(service_id: str, status: str):
 # ── Helper Functions ───────────────────────────────────────────────────
 
 def _get_service_summary() -> dict:
-    """Build service status from SLP gateway + config."""
     result = {}
     for key, svc_cfg in services_cfg.items():
         sid = svc_cfg.get("service_id", f"{key}-001")
@@ -230,18 +228,15 @@ CSH_DOMAINS = {"csh.oscyra.solutions", "localhost", "127.0.0.1"}
 
 
 async def reverse_proxy(request: Request) -> Optional[Response]:
-    """Proxy requests to backend services based on Host header."""
     host = request.headers.get("host", "").split(":")[0]
     port = DOMAIN_TO_SERVICE.get(host)
     if port is None:
-        return None  # Not a service domain — let CSH handle it.
-    # Build target URL.
+        return None
     path = request.url.path
     query = str(request.url.query)
     target = f"http://127.0.0.1:{port}{path}"
     if query:
         target += f"?{query}"
-    # Forward the request.
     async with httpx.AsyncClient() as client:
         try:
             body = await request.body()
@@ -269,7 +264,6 @@ async def reverse_proxy(request: Request) -> Optional[Response]:
 
 @app.middleware("http")
 async def host_router(request: Request, call_next):
-    """Route based on Host header: service domains → reverse proxy, CSH domains → dashboard."""
     host = request.headers.get("host", "").split(":")[0]
     if host in DOMAIN_TO_SERVICE:
         result = await reverse_proxy(request)
@@ -492,12 +486,12 @@ DASHBOARD_HTML = """<!DOCTYPE html>
         if (isOnline) activeCount++;
         const metrics = svc.metrics || {};
         const session = svc.session || {};
-        const uptime = svc.uptime || '—';
-        const cpuPct = metrics.cpu_percent !== undefined ? metrics.cpu_percent.toFixed(1) + '%' : '—';
-        const memMb = metrics.memory_mb !== undefined ? metrics.memory_mb.toFixed(1) + 'MB' : '—';
-        const sessionId = session.session_id || '—';
-        const msgCount = session.messages_sent !== undefined ? session.messages_sent : '—';
-        const sessionState = session.state || '—';
+        const uptime = svc.uptime || '\u2014';
+        const cpuPct = metrics.cpu_percent !== undefined ? metrics.cpu_percent.toFixed(1) + '%' : '\u2014';
+        const memMb = metrics.memory_mb !== undefined ? metrics.memory_mb.toFixed(1) + 'MB' : '\u2014';
+        const sessionId = session.session_id || '\u2014';
+        const msgCount = session.messages_sent !== undefined ? session.messages_sent : '\u2014';
+        const sessionState = session.state || '\u2014';
 
         html += `
           <div class="service-row">
@@ -542,12 +536,12 @@ DASHBOARD_HTML = """<!DOCTYPE html>
           <div class="slc-stat"><span class="k">Status</span><span class="v"><span class="badge ${status}">${status}</span></span></div>
           <div class="slc-stat"><span class="k">Service ID</span><span class="v">${svc.service_id}</span></div>
           <div class="slc-stat"><span class="k">Port</span><span class="v">${svc.port}</span></div>
-          <div class="slc-stat"><span class="k">Domain</span><span class="v">${svc.domain || '—'}</span></div>
-          <div class="slc-stat"><span class="k">Uptime</span><span class="v">${svc.uptime || '—'}</span></div>
-          <div class="slc-stat"><span class="k">CPU</span><span class="v">${metrics.cpu_percent !== undefined ? metrics.cpu_percent.toFixed(1) + '%' : '—'}</span></div>
-          <div class="slc-stat"><span class="k">Memory</span><span class="v">${metrics.memory_mb !== undefined ? metrics.memory_mb.toFixed(1) + ' MB' : '—'}</span></div>
-          <div class="slc-stat"><span class="k">Session</span><span class="v">${session.session_id || '—'}</span></div>
-          <div class="slc-stat"><span class="k">Messages</span><span class="v">${session.messages_sent !== undefined ? session.messages_sent : '—'}</span></div>
+          <div class="slc-stat"><span class="k">Domain</span><span class="v">${svc.domain || '\u2014'}</span></div>
+          <div class="slc-stat"><span class="k">Uptime</span><span class="v">${svc.uptime || '\u2014'}</span></div>
+          <div class="slc-stat"><span class="k">CPU</span><span class="v">${metrics.cpu_percent !== undefined ? metrics.cpu_percent.toFixed(1) + '%' : '\u2014'}</span></div>
+          <div class="slc-stat"><span class="k">Memory</span><span class="v">${metrics.memory_mb !== undefined ? metrics.memory_mb.toFixed(1) + ' MB' : '\u2014'}</span></div>
+          <div class="slc-stat"><span class="k">Session</span><span class="v">${session.session_id || '\u2014'}</span></div>
+          <div class="slc-stat"><span class="k">Messages</span><span class="v">${session.messages_sent !== undefined ? session.messages_sent : '\u2014'}</span></div>
         </div>`;
         const active = selectedLogService === key ? 'active' : '';
         selHtml += `<button class="tab-btn ${active}" onclick="selectLog('${key}')">${svc.name}</button>`;
@@ -671,7 +665,6 @@ async def get_gateway_status():
 
 @app.get("/api/logs/{service_key}")
 async def get_logs(service_key: str):
-    # Accept both service key (e.g. "klar") and service_id (e.g. "klar-001").
     logs = LOG_STORE.get(service_key, [])
     if not logs:
         sid = services_cfg.get(service_key, {}).get("service_id", "")
@@ -697,9 +690,19 @@ async def start_service(service_key: str):
     if not cmd:
         return JSONResponse({"error": "No launch command configured"}, status_code=400)
 
-    # Resolve cwd relative to CSH directory.
     csh_dir = os.path.dirname(os.path.abspath(__file__))
     abs_cwd = os.path.normpath(os.path.join(csh_dir, cwd))
+
+    # ── DEBUG: log all resolved paths ──────────────────────────────────
+    logger.info("[DEBUG][%s] csh_dir      = %s", service_key, csh_dir)
+    logger.info("[DEBUG][%s] cwd (yaml)   = %s", service_key, cwd)
+    logger.info("[DEBUG][%s] abs_cwd      = %s", service_key, abs_cwd)
+    logger.info("[DEBUG][%s] cwd exists   = %s", service_key, os.path.isdir(abs_cwd))
+    logger.info("[DEBUG][%s] command      = %s", service_key, cmd)
+    if os.path.isdir(abs_cwd):
+        logger.info("[DEBUG][%s] cwd contents = %s", service_key, os.listdir(abs_cwd))
+    add_log(service_key, f"[DEBUG] abs_cwd={abs_cwd} exists={os.path.isdir(abs_cwd)} cmd={cmd}", "INFO")
+    # ───────────────────────────────────────────────────────────────────
 
     keys_dir = os.path.join(csh_dir, gateway_cfg.get("keys_dir", "keys"))
     priv_key_path = os.path.join(keys_dir, f"{service_key}_private.key")
@@ -707,7 +710,6 @@ async def start_service(service_key: str):
     gw_host = gateway_cfg.get("host", "127.0.0.1")
     gw_port = gateway_cfg.get("port", 14270)
 
-    # Launch via service_wrapper.
     wrapper_cmd = [
         sys.executable, "-m", "slp.agent.service_wrapper",
         "--service-id", sid,
@@ -721,21 +723,39 @@ async def start_service(service_key: str):
         "--launch-cmd", cmd,
         "--launch-cwd", abs_cwd,
     ]
+    logger.info("[DEBUG][%s] wrapper_cmd  = %s", service_key, wrapper_cmd)
 
     try:
+        # Capture stderr to a pipe so we can log it after a short delay.
         proc = subprocess.Popen(
             wrapper_cmd,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
             cwd=csh_dir,
             start_new_session=True,
         )
         services_procs[service_key] = proc
         service_start_times[service_key] = time.time()
         add_log(service_key, f"Starting {svc_cfg.get('name', service_key)} via SLP wrapper (PID {proc.pid})", "SUCCESS")
+        logger.info("[DEBUG][%s] Popen succeeded, PID=%d", service_key, proc.pid)
+
+        # Give the process 2 seconds to fail, then capture any early stderr.
+        async def _collect_stderr():
+            await asyncio.sleep(2)
+            if proc.poll() is not None:
+                _, err = proc.communicate()
+                err_text = err.decode(errors="replace").strip()
+                logger.error("[DEBUG][%s] process exited early (rc=%d): %s", service_key, proc.returncode, err_text)
+                add_log(service_key, f"[ERROR] exited rc={proc.returncode}: {err_text[:300]}", "ERROR")
+            else:
+                logger.info("[DEBUG][%s] process still running after 2s — looks good", service_key)
+
+        asyncio.create_task(_collect_stderr())
+
         return JSONResponse({"message": f"{service_key} started", "pid": proc.pid})
     except Exception as exc:
-        logger.error("Error starting service %s: %s", service_key, exc)
+        logger.error("[DEBUG][%s] Popen failed: %s", service_key, exc)
+        add_log(service_key, f"[ERROR] Popen failed: {exc}", "ERROR")
         return JSONResponse({"error": str(exc)}, status_code=500)
 
 
@@ -747,14 +767,12 @@ async def stop_service(service_key: str):
 
     sid = svc_cfg.get("service_id", f"{service_key}-001")
 
-    # Send GRACEFUL_STOP via SLP if connected.
     if slp_gateway:
         try:
             await slp_gateway.send_command(sid, "GRACEFUL_STOP")
         except Exception:
             pass
 
-    # Also terminate the wrapper process.
     proc = services_procs.get(service_key)
     if proc and proc.poll() is None:
         try:
@@ -822,13 +840,11 @@ async def startup_event():
     csh_dir = os.path.dirname(os.path.abspath(__file__))
     keys_dir = os.path.join(csh_dir, gateway_cfg.get("keys_dir", "keys"))
 
-    # Generate keys on first run.
     key_names = ["csh"] + list(services_cfg.keys())
     generated = ensure_keys(keys_dir, key_names)
     if generated:
         logger.info("Generated keys for: %s", ", ".join(generated))
 
-    # Load CSH private key and build allow-list.
     csh_priv = load_private_key(os.path.join(keys_dir, "csh_private.key"))
     allowed_keys: Dict[str, bytes] = {}
     for key, svc_cfg_item in services_cfg.items():
@@ -837,7 +853,6 @@ async def startup_event():
         if os.path.exists(pub_path):
             allowed_keys[sid] = load_public_key_bytes(pub_path)
 
-    # Start SLP gateway.
     slp_gateway = SLPGateway(
         bind_addr=gateway_cfg.get("host", "127.0.0.1"),
         bind_port=gateway_cfg.get("port", 14270),
@@ -850,7 +865,6 @@ async def startup_event():
     slp_gateway.on_status_change = _on_status_change
     await slp_gateway.start()
 
-    # Start background tasks.
     asyncio.create_task(ip_watcher())
 
     logger.info("CSH started — dashboard on 127.0.0.1:5000, SLP gateway on %s:%d",
@@ -861,7 +875,6 @@ async def startup_event():
 async def shutdown_event():
     if slp_gateway:
         slp_gateway.stop()
-    # Terminate any running service wrappers.
     for key, proc in services_procs.items():
         if proc.poll() is None:
             proc.terminate()
