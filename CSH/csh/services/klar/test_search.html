@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Klar Search Engine - Test Interface</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 40px 20px;
+        }
+        .header {
+            text-align: center;
+            color: white;
+            margin-bottom: 40px;
+        }
+        .header h1 {
+            font-size: 48px;
+            margin-bottom: 10px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.2);
+        }
+        .header p {
+            font-size: 18px;
+            opacity: 0.9;
+        }
+        .search-box {
+            background: white;
+            border-radius: 50px;
+            padding: 8px 20px;
+            display: flex;
+            align-items: center;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+            margin-bottom: 30px;
+        }
+        .search-box input {
+            flex: 1;
+            border: none;
+            outline: none;
+            font-size: 18px;
+            padding: 12px;
+        }
+        .search-box button {
+            background: #667eea;
+            color: white;
+            border: none;
+            padding: 12px 30px;
+            border-radius: 30px;
+            font-size: 16px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: all 0.3s;
+        }
+        .search-box button:hover {
+            background: #5568d3;
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102,126,234,0.4);
+        }
+        .stats {
+            background: rgba(255,255,255,0.1);
+            backdrop-filter: blur(10px);
+            border-radius: 15px;
+            padding: 15px 20px;
+            color: white;
+            margin-bottom: 20px;
+            display: none;
+        }
+        .stats.show { display: block; }
+        .results {
+            background: white;
+            border-radius: 15px;
+            padding: 20px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.1);
+            display: none;
+        }
+        .results.show { display: block; }
+        .result-item {
+            padding: 20px;
+            border-bottom: 1px solid #eee;
+            transition: all 0.3s;
+        }
+        .result-item:last-child { border-bottom: none; }
+        .result-item:hover {
+            background: #f8f9ff;
+            transform: translateX(5px);
+        }
+        .result-title {
+            font-size: 20px;
+            color: #667eea;
+            text-decoration: none;
+            font-weight: 600;
+            display: block;
+            margin-bottom: 5px;
+        }
+        .result-title:hover { text-decoration: underline; }
+        .result-url {
+            font-size: 14px;
+            color: #34a853;
+            margin-bottom: 8px;
+        }
+        .result-snippet {
+            font-size: 14px;
+            color: #555;
+            line-height: 1.6;
+        }
+        .result-score {
+            display: inline-block;
+            background: #667eea;
+            color: white;
+            padding: 2px 8px;
+            border-radius: 10px;
+            font-size: 12px;
+            margin-left: 10px;
+        }
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #999;
+            display: none;
+        }
+        .loading.show { display: block; }
+        .error {
+            background: #ff4444;
+            color: white;
+            padding: 15px 20px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            display: none;
+        }
+        .error.show { display: block; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🔍 KLAR</h1>
+            <p>Swedish National Search Engine - Test Interface</p>
+        </div>
+
+        <div class="search-box">
+            <input type="text" id="searchInput" placeholder="Sök efter riksdagen, skatteverket, universitet..." autofocus>
+            <button onclick="search()">Sök</button>
+        </div>
+
+        <div class="stats" id="stats"></div>
+        <div class="error" id="error"></div>
+        <div class="loading" id="loading">Söker...</div>
+        <div class="results" id="results"></div>
+    </div>
+
+    <script>
+        const API_URL = 'http://localhost:5000/api/search';
+
+        // Search on Enter key
+        document.getElementById('searchInput').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                search();
+            }
+        });
+
+        async function search() {
+            const query = document.getElementById('searchInput').value.trim();
+            if (!query) return;
+
+            // Show loading, hide others
+            document.getElementById('loading').classList.add('show');
+            document.getElementById('results').classList.remove('show');
+            document.getElementById('stats').classList.remove('show');
+            document.getElementById('error').classList.remove('show');
+
+            try {
+                const startTime = performance.now();
+                const response = await fetch(`${API_URL}?q=${encodeURIComponent(query)}`);
+                const endTime = performance.now();
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+
+                const data = await response.json();
+                
+                // Hide loading
+                document.getElementById('loading').classList.remove('show');
+
+                // Show stats
+                const statsDiv = document.getElementById('stats');
+                statsDiv.innerHTML = `
+                    <strong>Resultat:</strong> ${data.total_matches} träffar i ${data.time_ms.toFixed(1)}ms
+                    | <strong>Söktermer:</strong> ${data.search_terms.join(', ')}
+                    | <strong>Visade:</strong> ${data.results.length}
+                `;
+                statsDiv.classList.add('show');
+
+                // Show results
+                const resultsDiv = document.getElementById('results');
+                if (data.results.length === 0) {
+                    resultsDiv.innerHTML = '<div style="text-align:center;padding:40px;color:#999;">Inga resultat hittades</div>';
+                } else {
+                    resultsDiv.innerHTML = data.results.map((result, index) => `
+                        <div class="result-item">
+                            <a href="${result.url}" class="result-title" target="_blank">
+                                ${index + 1}. ${result.title}
+                                <span class="result-score">Score: ${result.score.toFixed(1)}</span>
+                            </a>
+                            <div class="result-url">${result.url}</div>
+                            <div class="result-snippet">${result.snippet}</div>
+                        </div>
+                    `).join('');
+                }
+                resultsDiv.classList.add('show');
+
+            } catch (error) {
+                document.getElementById('loading').classList.remove('show');
+                const errorDiv = document.getElementById('error');
+                errorDiv.textContent = `Error: ${error.message}`;
+                errorDiv.classList.add('show');
+                console.error('Search error:', error);
+            }
+        }
+
+        // Test on load
+        window.addEventListener('load', () => {
+            console.log('Klar Search Test Interface loaded');
+            console.log('API URL:', API_URL);
+        });
+    </script>
+</body>
+</html>
