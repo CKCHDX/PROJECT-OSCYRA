@@ -38,7 +38,7 @@ services:
     auto_restart: false
     launch:
       command: "python -m uvicorn backend.main:app --host 127.0.0.1 --port 4273"
-      cwd: "../Upsum"
+      cwd: "csh/services/upsum"
 
   testview:
     name: "TestView"
