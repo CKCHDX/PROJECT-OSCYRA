@@ -1,0 +1,44 @@
+[Unit]
+Description=Klar Search Engine API Server
+After=network.target
+
+[Service]
+Type=notify
+User=kse
+Group=kse
+WorkingDirectory=/opt/kse/1.0
+Environment="PYTHONPATH=/opt/kse/1.0"
+Environment="KSE_PRODUCTION=1"
+Environment="KSE_LOG_LEVEL=INFO"
+ExecStart=/opt/kse/venv/bin/gunicorn \
+    --workers 4 \
+    --worker-class gevent \
+    --bind 0.0.0.0:5000 \
+    --timeout 120 \
+    --access-logfile /opt/kse/1.0/logs/access.log \
+    --error-logfile /opt/kse/1.0/logs/error.log \
+    --log-level info \
+    api_server:app
+ExecReload=/bin/kill -s HUP $MAINPID
+KillMode=mixed
+KillSignal=SIGQUIT
+TimeoutStopSec=5
+PrivateTmp=true
+
+# Security settings
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/kse/1.0/data /opt/kse/1.0/logs
+PrivateDevices=true
+
+# Resource limits
+LimitNOFILE=65536
+LimitNPROC=512
+
+# Restart policy
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,48 @@
+# Klar Search Engine Server - Dependencies
+# Enterprise-Grade Swedish Search Infrastructure
+
+# Web Framework
+Flask==3.0.0
+Flask-CORS==4.0.0
+Flask-Compress==1.14.0
+gunicorn==21.2.0
+gevent==23.9.1
+
+# Web Crawling
+requests==2.31.0
+beautifulsoup4==4.12.2
+lxml==4.9.3
+urllib3==2.1.0
+fake-useragent==1.4.0
+
+# Swedish NLP
+nltk==3.8.1
+
+# Semantic Search (National Scale Feature)
+sentence-transformers==2.2.2
+torch==2.1.2
+transformers==4.36.2
+
+# Data Processing
+numpy==1.24.4
+
+
+# Monitoring & Logging
+psutil==5.9.6
+prometheus-client==0.19.0
+
+# Database (Optional - for national scale)
+psycopg2-binary==2.9.9
+
+# Testing
+pytest==7.4.3
+pytest-cov==4.1.0
+pytest-mock==3.12.0
+
+# Utilities
+python-dateutil==2.8.2
+colorama==0.4.6
+tqdm==4.66.1
+
+# Security
+certifi==2023.11.17
